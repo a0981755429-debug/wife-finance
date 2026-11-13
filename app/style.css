@@ -135,3 +135,24 @@ select.cell{padding:4px 6px}
 .flow-sel{min-width:6.5em;font-size:13px}
 .flow-sel.mv{color:var(--accent);border-color:var(--accent)}
 .flow-sel.rp{color:var(--warn)}
+/* 投資：持股卡片、交易、配息日曆 */
+.seg button[aria-pressed="true"][data-v="buy"],.seg button[aria-pressed="true"][data-v="sell"],.seg button[aria-pressed="true"][data-v="div"]{background:var(--accent);color:#fff}
+.hcards{align-items:start;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.hcard{border:1px solid var(--rule);border-radius:10px;background:var(--sheet)}
+.hcard>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:12px 14px}
+.hcard>summary::-webkit-details-marker{display:none}
+.hcard .hc-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hcard .hc-mv{text-align:right;font-size:18px}
+.hcard .hc-pnl{grid-column:1/-1;text-align:right;font-size:13px}
+.hcard[open]>summary{border-bottom:1px solid var(--rule-2)}
+.hc-body{padding:10px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.hc-dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:14px}
+.hc-dl dt{color:var(--ink-3)}.hc-dl dd{margin:0;text-align:right}
+.hc-body .form{grid-template-columns:1fr 1fr}
+.dv-cal{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.dv-m{display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:8px;border:1px solid var(--rule-2);min-width:0}
+.dv-m.has{background:var(--tint);border-color:transparent}
+.dv-m .small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:640px){.dv-cal{grid-template-columns:repeat(3,1fr)}}
+.seg button{white-space:nowrap}
+#tr-kind{grid-column:1/-1;justify-self:start}
