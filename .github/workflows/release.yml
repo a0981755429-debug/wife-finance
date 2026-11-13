@@ -32,5 +32,5 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG 已經有了"; exit 0; fi
-          mkdir -p dist && cp app/* dist/ && (cd dist && zip -q ../wife-finance-$TAG.zip *)
+          mkdir -p dist && cp app/*.html app/*.css app/*.js dist/ && (cd dist && zip -q ../wife-finance-$TAG.zip *)
           gh release create "$TAG" --target "$SHA" --title "家計簿 $TAG" --notes-file notes.md "wife-finance-$TAG.zip"

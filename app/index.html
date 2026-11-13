@@ -1,14 +1,38 @@
-<title>阿臻的家計簿</title>
-<meta name="claude:viewport-fit-sides" content="cover">
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="老婆財務平台">
+<title>老婆財務平台</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#f4f6f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121614" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="manifest" href="../manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css">
+</head>
+<body>
 
+<div class="lock" id="lock" hidden>
+  <form class="sheet lockbox" id="lockf" autocomplete="off">
+    <h1>老婆財務平台</h1>
+    <p class="small muted" style="margin:0">資料有加密，輸入密碼才會在這台裝置上解開。密碼不會傳到任何地方。</p>
+    <label class="f" for="pw">密碼<input id="pw" type="password" required autocomplete="current-password"></label>
+    <label class="small"><input id="remember" type="checkbox" checked> 在這台裝置記住</label>
+    <button class="btn" type="submit">解鎖</button>
+  </form>
+  <div id="pwerr" class="small" role="alert"></div>
+</div>
 <div class="wrap">
   <header class="top">
     <div>
-      <h1>阿臻的家計簿</h1>
+      <h1>老婆財務平台</h1>
       <div class="sub">收支記錄、每月預算、未來一年現金流與存錢目標</div>
     </div>
     <div class="status" id="status">連線中…</div>
@@ -20,6 +44,7 @@
     <button role="tab" data-tab="plan">規劃與目標</button>
     <button role="tab" data-tab="invest">投資</button>
     <button role="tab" data-tab="fixed">固定支出</button>
+    <button role="tab" data-tab="settings">設定</button>
   </nav>
   <div id="banner" class="banner" hidden></div>
 
@@ -155,18 +180,7 @@
       <div class="row between"><h2>股票與 ETF</h2><span class="small muted" id="iv-upd"></span></div>
       <div class="kpis" id="iv-kpis"></div>
       <div class="tbl-wrap" id="iv-table"></div>
-      <p class="small muted" style="margin:0">損益已扣掉賣出時的手續費 0.1425% 和交易稅（ETF 0.1%、個股 0.3%），跟券商 App 的「原幣損益試算」算法一樣。現價不會自動更新，可以直接改表格，或用下面的「從券商截圖更新」。</p>
-    </div>
-    <div class="sheet">
-      <h3>從券商截圖更新</h3>
-      <p class="small muted" style="margin:0">在券商 App 打開「未實現損益」或庫存畫面截圖，選圖片後按「讀取」，會先列出哪些股票要更新，確認後再套用。第一次使用會問你是否允許讀圖。<span id="shot-max"></span></p>
-      <div class="row">
-        <input id="shot-file" type="file" accept="image/*" multiple disabled>
-        <button class="btn" id="shot-go" type="button" disabled>讀取</button>
-        <button class="btn" id="shot-apply" type="button" hidden>套用勾選的</button>
-      </div>
-      <div id="shot-msg" class="small"></div>
-      <div class="tbl-wrap" id="shot-preview"></div>
+      <p class="small muted" style="margin:0">損益已扣掉賣出時的手續費 0.1425% 和交易稅（ETF 0.1%、個股 0.3%），跟券商 App 的「原幣損益試算」算法一樣。現價每個交易日盤後會自動換成收盤價；要手動改也可以直接改表格。</p>
     </div>
     <div class="grid2">
       <div class="sheet">
@@ -198,10 +212,56 @@
     </div>
   </section>
 
+  <!-- 設定 -->
+  <section id="v-settings" data-view="settings" class="wrap" style="gap:20px" hidden>
+    <div class="sheet">
+      <h2>同步</h2>
+      <p class="small muted" style="margin:0">資料加密後存在 GitHub 的 <span class="num" id="st-repo"></span>（app/vault.json），網路上只看得到亂碼，要密碼才解得開。</p>
+      <p id="st-sync"></p>
+      <div><button class="btn ghost" id="st-now" type="button">立即同步</button></div>
+    </div>
+    <div class="sheet">
+      <h2>GitHub 金鑰（每台裝置設定一次）</h2>
+      <p class="small muted" style="margin:0" id="st-tok-state"></p>
+      <ol class="small" style="margin:0;padding-left:1.4em;line-height:1.8">
+        <li>打開 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub 新增 Fine-grained token</a>。</li>
+        <li>Repository access 選 <b>Only select repositories</b> → 勾 <b>wife-finance</b>。</li>
+        <li>Permissions → Repository permissions → <b>Contents</b> 選 <b>Read and write</b>，其他不用動。</li>
+        <li>按 Generate token，把 github_pat_ 開頭的那串貼到下面。</li>
+      </ol>
+      <form id="st-tok-form" class="row" autocomplete="off">
+        <input id="st-tok" type="password" placeholder="github_pat_…" aria-label="GitHub 金鑰" style="flex:1;min-width:12em">
+        <button class="btn" type="submit">儲存金鑰</button>
+        <button class="btn ghost" id="st-tok-clear" type="button">移除</button>
+      </form>
+      <div id="st-tok-msg" class="small"></div>
+    </div>
+    <div class="grid2">
+      <div class="sheet">
+        <h3>更換密碼</h3>
+        <form id="st-pw-form" class="form" autocomplete="off">
+          <label class="f" for="st-pw-old">目前的密碼<input id="st-pw-old" type="password" required autocomplete="current-password"></label>
+          <label class="f" for="st-pw-new">新密碼（至少 8 個字）<input id="st-pw-new" type="password" required autocomplete="new-password"></label>
+          <label class="f" for="st-pw-new2">再輸入一次<input id="st-pw-new2" type="password" required autocomplete="new-password"></label>
+          <button class="btn" type="submit">更換</button>
+        </form>
+        <div id="st-pw-msg" class="small"></div>
+      </div>
+      <div class="sheet">
+        <h3>備份與這台裝置</h3>
+        <p class="small muted" style="margin:0">備份檔是沒加密的 JSON，請存在自己的地方，不要上傳到 GitHub。</p>
+        <div class="row"><button class="btn ghost" id="st-backup" type="button">下載備份</button><button class="btn ghost" id="st-lock" type="button">上鎖並忘記密碼</button></div>
+      </div>
+    </div>
+  </section>
+
   <div class="stamp">新台幣計價 · 民國年 = 西元年 − 1911 · <a href="https://github.com/a0981755429-debug/wife-finance/blob/main/CHANGELOG.md" target="_blank" rel="noopener">版本 <span id="ver"></span> 更新內容</a></div>
 </div>
 <div class="toast" id="toast" hidden></div>
 
 <script src="smoney.js"></script>
-<script src="holdings.js"></script>
+<script src="vault.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 {
   "name": "老婆財務平台",
   "short_name": "老婆財務平台",
-  "start_url": "./",
-  "display": "browser",
+  "start_url": "./app/",
+  "display": "standalone",
   "background_color": "#14304a",
   "theme_color": "#14304a",
   "icons": [
