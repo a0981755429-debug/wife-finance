@@ -30,7 +30,8 @@
 | `index.html`、圖示、`manifest.webmanifest` | 首頁（自動進入 `app/`）和主畫面圖示 |
 | `app/index.html`、`app/style.css` | 頁面結構與樣式（含深色模式） |
 | `app/app.js` | 主程式（圖表、各分頁、設定） |
-| `app/vault.js` | 加解密、修改紀錄的套用與合併 |
+| `app/vault.js` | 加解密、修改紀錄的套用與逐欄合併 |
+| `app/audit.js` | 帳務健檢、匯入前風險檢查 |
 | `app/sync.js` | 解鎖、讀取、用 GitHub API 自動同步 |
 | `app/smoney.js` | smoney 匯出 CSV 的解析、類別對應、匯入前比對 |
 | `app/vault.json` | 加密的資料檔 |

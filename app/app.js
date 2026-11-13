@@ -18,7 +18,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.0.1';
+const VERSION='2.1.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -51,16 +51,19 @@ function catAvg(){ // average per category over months whose categories are reco
 }
 
 /* ---------- db ---------- */
+function curRec(col,id){if(col==='settings')return S[id]||null;if(col==='monthly')return S.monthly[id]||null;const r=(S[col]||[]).find(e=>e.id===id);if(!r)return null;const{id:_,...rest}=r;return rest}
 function put(col,id,data){
+  const prev=curRec(col,id);
   if(col==='entries'){const i=S.entries.findIndex(e=>e.id===id);const d={...data,id};i<0?S.entries.push(d):S.entries[i]=d}
   else if(col==='goals'||col==='fixed'||col==='holdings'){const arr=S[col];const i=arr.findIndex(e=>e.id===id);const d={...data,id};i<0?arr.push(d):arr[i]=d}
   else if(col==='monthly'){S.monthly[id]=data}
   else if(col==='settings'){S[id]=data}
-  Sync.op(col,id,data);renderAll();
+  Sync.op(col,id,data,prev);renderAll();
 }
 function del(col,id){
+  const prev=curRec(col,id);
   if(col==='entries'||col==='goals'||col==='fixed'||col==='holdings')S[col]=S[col].filter(e=>e.id!==id);
-  Sync.op(col,id,null);renderAll();
+  Sync.op(col,id,null,prev);renderAll();
 }
 function setStatus(t,err){const s=$('#status');s.textContent=t;s.classList.toggle('err',!!err)}
 
@@ -73,7 +76,7 @@ function onSyncState(st){setStatus(st.text,st.kind==='error');const b=$('#banner
   if(tab==='settings')renderSettings()}
 async function start(){
   fetch('quotes.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(q=>{if(q&&q.prices){Q.date=q.date||'';Q.prices=q.prices;renderAll()}}).catch(()=>{});
-  const r=await Sync.boot({onData:loadData,onState:onSyncState});
+  const r=await Sync.boot({onData:loadData,onState:onSyncState,onConflicts:c=>{toast(`有 ${c.length} 筆被兩台裝置同時修改，詳情在「設定」`);if(tab==='settings')renderSettings()}});
   if(r==='locked'){$('#lock').hidden=false;$('#pw').focus()}
   else if(r==='error'){$('#lock').hidden=false;$('#lockf').hidden=true;$('#pwerr').textContent='讀不到資料檔，請稍後重新整理。'}
 }
@@ -227,22 +230,28 @@ armDelete($('#lg-list'),'entries');
 let pending=null;
 const ymLabel=ym=>`${roc(+ym.slice(0,4))}/${+ym.slice(5)}月`;
 const STATUS_TXT={new:['新月份','inc'],changed:['有變動','exp'],same:['沒變','']};
+const needConfirm=()=>!!(pending&&pending.risks&&pending.risks.some(r=>r.kind!=='extra')&&!$('#imp-ok').checked);
+function renderImpRisks(){const box=$('#imp-risk');const rs=(pending&&pending.risks)||[];if(!rs.length){box.innerHTML='';box.hidden=true;return}
+  const serious=rs.some(r=>r.kind!=='extra');box.hidden=false;
+  box.innerHTML=`<b>${serious?'匯入前請確認':'提醒'}</b><ul>${rs.map(r=>`<li>${esc(r.text)}</li>`).join('')}</ul>${serious?'<label class="small"><input type="checkbox" id="imp-ok"> 我看過了，照樣匯入</label>':''}`;
+  const ok=$('#imp-ok');if(ok)ok.addEventListener('change',()=>{$('#imp-go').disabled=needConfirm()})}
 function renderImpPreview(){const box=$('#imp-preview');if(!pending){box.innerHTML='';return}
   const d=pending.diff;const tot=t=>t?`<span class="num" style="white-space:nowrap">+${fmt(t.i)} / −${fmt(t.e)}</span>`:'<span class="muted">—</span>';
   box.innerHTML=`<table><thead><tr><th>月份</th><th>狀態</th><th class="r">目前（收 / 支）</th><th class="r">匯入後（收 / 支）</th><th class="r">筆數</th></tr></thead><tbody>${d.map(x=>{const[t,c]=STATUS_TXT[x.status];
     return`<tr class="${x.status==='same'?'muted':''}"><td>${ymLabel(x.ym)}</td><td>${c?`<span class="pill ${c}">${t}</span>`:`<span class="small muted">${t}</span>`}</td><td class="r">${tot(x.old)}</td><td class="r">${tot(x.new)}</td><td class="num r">${x.old&&x.old.n?`${x.old.n} → `:''}${x.new.n}</td></tr>`}).join('')}</tbody></table>`}
-$('#imp-file').addEventListener('change',async e=>{const f=e.target.files[0];pending=null;$('#imp-go').disabled=true;renderImpPreview();if(!f)return;
+$('#imp-file').addEventListener('change',async e=>{const f=e.target.files[0];pending=null;$('#imp-go').disabled=true;renderImpPreview();renderImpRisks();if(!f)return;
   try{const p=parseSmoney(await f.text());const ms=Object.keys(p.by).sort();if(!ms.length)throw new Error('檔案裡沒有可以匯入的收支記錄');
     p.diff=diffMonths(p.by,S.monthly);const todo=p.diff.filter(x=>x.status!=='same');pending=p;renderImpPreview();
-    $('#imp-go').disabled=!todo.length;
+    const sub={};todo.forEach(x=>sub[x.ym]=p.by[x.ym]);p.risks=importRisks(sub,S.monthly,S.entries);renderImpRisks();
+    $('#imp-go').disabled=!todo.length||needConfirm();
     $('#imp-msg').textContent=`找到 ${p.n.toLocaleString()} 筆，${ymLabel(ms[0])} 到 ${ymLabel(ms[ms.length-1])}。`+(todo.length?`會更新 ${todo.length} 個月${ms.length>todo.length?`，其餘 ${ms.length-todo.length} 個月跟現在一樣，會跳過`:''}。按「匯入」開始。`:'每個月都跟現在一樣，不用匯入。')+(p.skipped?`（略過 ${p.skipped} 筆格式不對的資料）`:'')}
   catch(err){$('#imp-msg').textContent='無法讀取：'+(err.message||err)}});
-$('#imp-go').addEventListener('click',async()=>{if(!pending)return;const ms=pending.diff.filter(x=>x.status!=='same').map(x=>x.ym);$('#imp-go').disabled=true;let done=0;
+$('#imp-go').addEventListener('click',async()=>{if(!pending||needConfirm())return;const ms=pending.diff.filter(x=>x.status!=='same').map(x=>x.ym);$('#imp-go').disabled=true;let done=0;
   for(const ym of ms){const old=S.monthly[ym]||{};const d={ym,rows:pending.by[ym],source:'smoney',importedAt:new Date().toISOString()};
     if(old.extra)d.extra=old.extra;if(old.note)d.note=old.note;
-    S.monthly[ym]=d;Sync.op('monthly',ym,d);
+    const prevM=S.monthly[ym]||null;S.monthly[ym]=d;Sync.op('monthly',ym,d,prevM);
     done++;$('#imp-msg').textContent=`匯入中… ${done}/${ms.length} 個月`}
-  pending=null;renderImpPreview();$('#imp-file').value='';$('#imp-msg').textContent=`完成，已更新 ${done} 個月：${ms.map(ymLabel).join('、')}。`;toast('匯入完成');renderAll()});
+  pending=null;renderImpPreview();renderImpRisks();$('#imp-file').value='';$('#imp-msg').textContent=`完成，已更新 ${done} 個月：${ms.map(ymLabel).join('、')}。`;toast('匯入完成');renderAll()});
 
 /* ---------- 預算 ---------- */
 $('#bg-month').addEventListener('change',renderBudget);
@@ -401,6 +410,15 @@ function renderSettings(){
   $('#st-repo').textContent=Sync.repo();$('#st-sync').textContent=$('#status').textContent;
   $('#st-tok-state').textContent=Sync.hasToken()?'這台裝置已設定金鑰，修改會自動同步。':'這台裝置還沒設定金鑰：可以看資料，但修改不會同步到其他裝置。';
   $('#st-tok-clear').hidden=!Sync.hasToken();$('#st-now').hidden=!Sync.hasToken();
+  renderHealth();
+}
+function renderHealth(){if(!S.ready)return;
+  const a=auditData({monthly:S.monthly,entries:S.entries,holdings:S.holdings});const err=a.issues.filter(i=>i.level==='error'),warn=a.issues.filter(i=>i.level==='warn');
+  $('#hc-kpis').innerHTML=kpi('月份',String(a.months))+kpi('匯入紀錄',a.rows.toLocaleString())+kpi('手動記帳',String(a.entries))+kpi('錯誤',String(err.length),err.length?'要修正':'沒有',err.length?'neg':'pos')+kpi('待核對',String(warn.length),warn.length?'請人工確認':'沒有');
+  const list=a.issues.slice(0,50);
+  $('#hc-list').innerHTML=list.length?`<table><thead><tr><th>等級</th><th>位置</th><th>說明</th></tr></thead><tbody>${list.map(i=>`<tr><td><span class="pill ${i.level==='error'?'exp':''}">${i.level==='error'?'錯誤':'待核對'}</span></td><td class="num">${esc(i.where)}</td><td>${esc(i.msg)}</td></tr>`).join('')}</tbody></table>${a.issues.length>50?`<p class="small muted">另外還有 ${a.issues.length-50} 項沒列出。</p>`:''}`:'<div class="empty">帳務檢查沒有發現問題。</div>';
+  const cs=Sync.conflicts();$('#hc-conf').hidden=!cs.length;
+  $('#hc-conf-list').innerHTML=cs.map(c=>`<li><span class="num small muted">${esc((c.at||'').slice(0,16).replace('T',' '))}</span> ${esc(c.label)}：${esc(c.text)}</li>`).join('');
 }
 $('#st-tok-form').addEventListener('submit',async e=>{e.preventDefault();const m=$('#st-tok-msg');m.textContent='檢查金鑰中…';
   try{await Sync.setToken($('#st-tok').value);$('#st-tok').value='';m.textContent='金鑰可以用，已開始同步。';toast('已設定同步')}
@@ -414,6 +432,7 @@ $('#st-pw-form').addEventListener('submit',async e=>{e.preventDefault();const m=
 $('#st-backup').addEventListener('click',()=>{const d=Sync.plain();const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,1)],{type:'application/json'}));a.download=`家計簿備份_${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)});
 $('#st-lock').addEventListener('click',()=>Sync.lock());
+$('#hc-conf-clear').addEventListener('click',()=>{Sync.clearConflicts();renderHealth()});
 
 const TABS=['overview','ledger','budget','plan','invest','fixed','settings'];let tab=TABS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
 function showTab(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));document.querySelectorAll('[data-view]').forEach(v=>v.hidden=v.dataset.view!==t);try{history.replaceState(null,'','#'+t)}catch(e){}renderAll()}

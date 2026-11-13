@@ -4,6 +4,7 @@
 const Sync = (() => {
   const ls = { get: k => { try { return localStorage.getItem(k) } catch (e) { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} }, del: k => { try { localStorage.removeItem(k) } catch (e) {} } };
   const PATH = 'app/vault.json';
+  let CONFLICTS = (() => { try { return JSON.parse(localStorage.getItem('wf.conflicts') || '[]') } catch (e) { return [] } })(), onConflicts = () => {};
   let VAULT = null, KEY = null, SALT = '', ITER = VAULT_ITER, BASE = null, SHA = null, OPS = [], timer = null, busy = false, again = false, onData = () => {}, onState = () => {};
 
   const repo = () => { const r = ls.get('wf.repo'); if (r) return r; const h = location.hostname.match(/^([^.]+)\.github\.io$/); const p = location.pathname.split('/').filter(Boolean)[0]; return h && p ? `${h[1]}/${p}` : 'a0981755429-debug/wife-finance'; };
@@ -39,7 +40,7 @@ const Sync = (() => {
   }
 
   async function boot(handlers) {
-    onData = handlers.onData; onState = handlers.onState;
+    onData = handlers.onData; onState = handlers.onState; onConflicts = handlers.onConflicts || onConflicts;
     state('loading', '讀取資料中…');
     try { const r = await fetchRemote(); VAULT = r.vault; SHA = r.sha; }
     catch (e) {
@@ -71,8 +72,10 @@ const Sync = (() => {
     else state('ok', '已同步 · 修改會自動存到 GitHub');
   }
 
-  function op(col, id, data) {
-    OPS.push({ col, id, data: data ? JSON.parse(JSON.stringify(data)) : null });
+  function op(col, id, data, prev) {
+    const clone = v => v == null ? null : JSON.parse(JSON.stringify(v));
+    const o = { col, id, data: clone(data) }; if (prev !== undefined) o.prev = clone(prev);
+    OPS.push(o);
     saveDraft(); schedule(2500);
     if (token()) state('pending', '有修改，稍後自動同步…'); else idle();
   }
@@ -90,12 +93,14 @@ const Sync = (() => {
           if (r.vault.salt !== SALT) throw new Error('密碼在別台裝置改過了，請重新整理後用新密碼解鎖');
           BASE = await decryptVault(r.vault, KEY); SHA = r.sha;
         }
-        const next = rebase(BASE, sending); next.savedAt = new Date().toISOString();
+        const rb = rebaseDetailed(BASE, sending); const next = rb.data; next.savedAt = new Date().toISOString();
+        var found = rb.conflicts;
         const v = await encryptVault(next, KEY, SALT, ITER);
         const res = await fetch(api(), { method: 'PUT', headers: H(), body: JSON.stringify({ message: '更新家計簿資料 ' + next.savedAt.slice(0, 16).replace('T', ' '), content: b64utf(JSON.stringify(v) + '\n'), ...(SHA ? { sha: SHA } : {}), branch: 'main' }) });
         if (res.status === 409 || res.status === 422) continue; // 別台裝置剛好也在存，重拿一次
         if (!res.ok) throw httpErr(res.status);
         const j = await res.json(); SHA = j.content.sha; BASE = next; VAULT = v;
+        if (found.length) { const at = new Date().toISOString(); CONFLICTS = found.map(c => ({ ...c, at })).concat(CONFLICTS).slice(0, 30); ls.set('wf.conflicts', JSON.stringify(CONFLICTS)); onConflicts(found); }
         OPS = OPS.slice(sending.length); await saveDraft();
         onData(rebase(BASE, OPS));
         busy = false;
@@ -141,5 +146,7 @@ const Sync = (() => {
   }
   function lock() { ls.del('wf.key'); location.reload(); }
   function plain() { return rebase(BASE, OPS); }
-  return { boot, unlock, op, syncNow: () => { clearTimeout(timer); return push(); }, setToken, changePassword, lock, plain, repo, hasToken: () => !!token(), errText };
+  function conflicts() { return CONFLICTS; }
+  function clearConflicts() { CONFLICTS = []; ls.del('wf.conflicts'); }
+  return { boot, unlock, op, conflicts, clearConflicts, syncNow: () => { clearTimeout(timer); return push(); }, setToken, changePassword, lock, plain, repo, hasToken: () => !!token(), errText };
 })();
