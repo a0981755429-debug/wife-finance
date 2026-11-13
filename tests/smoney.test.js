@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { smoneyCat, parseCSV, parseSmoney } = require('../app/smoney.js');
+const { smoneyCat, parseCSV, parseSmoney, diffMonths } = require('../app/smoney.js');
 
 const sample = '﻿記帳日期,分類,主分類,子分類,金額,幣別,更新日期,備註\n' +
   '2026/11/01,支出,飲食,午餐,120,TWD,2026/11/01,便當\n' +
@@ -37,4 +37,17 @@ test('依月份分組，略過金額為 0 的資料', () => {
 
 test('缺欄位時給出看得懂的錯誤', () => {
   assert.throws(() => parseSmoney('日期,金額\n2026/11/01,100\n'), /找不到欄位/);
+});
+
+test('匯入前比對：分出新增、有變動、沒變的月份', () => {
+  const { by } = parseSmoney(sample);
+  const monthly = {
+    '2026-11': { rows: by['2026-11'].slice().reverse() }, // 順序不同也算沒變
+    '2026-12': { rows: [{ d: '2026-12-01', t: 'e', c: '美容', s: '美容', a: 999, n: '' }] },
+  };
+  const d = diffMonths(by, monthly);
+  assert.deepStrictEqual(d.map(x => x.status), ['same', 'changed']);
+  assert.deepStrictEqual(diffMonths(by, {})[1], { ym: '2026-12', status: 'new', old: null, new: { i: 0, e: 1200, n: 1 } });
+  // 舊的 Excel 月總計（沒有逐筆）一律當作有變動
+  assert.strictEqual(diffMonths(by, { '2026-11': { income: 35000, expense: 7171 } })[0].status, 'changed');
 });
