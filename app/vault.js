@@ -29,10 +29,10 @@ async function decryptVault(v, key) {
   return JSON.parse(new TextDecoder().decode(pt));
 }
 
-/* 資料結構：monthly 是 {年月: 資料}；entries/goals/fixed/holdings 是陣列（每筆有 id）；budget、plan 是物件。 */
-const ARRAY_COLS = ['entries', 'goals', 'fixed', 'holdings', 'accounts', 'liabilities', 'reserves'];
+/* 資料結構：monthly 是 {年月: 資料}；entries/goals/fixed/holdings/snapshots 是陣列（每筆有 id）；budget、plan 是物件。 */
+const ARRAY_COLS = ['entries', 'goals', 'fixed', 'holdings', 'accounts', 'liabilities', 'reserves', 'snapshots'];
 const SETTING_IDS = ['budget', 'plan', 'funds', 'flows'];
-function emptyData() { return { schema: 1, monthly: {}, entries: [], budget: {}, plan: {}, goals: [], fixed: [], holdings: [], accounts: [], liabilities: [], reserves: [], funds: {} }; }
+function emptyData() { return { schema: 1, monthly: {}, entries: [], budget: {}, plan: {}, goals: [], fixed: [], holdings: [], accounts: [], liabilities: [], reserves: [], snapshots: [], funds: {} }; }
 /* 一筆修改 op = {col, id, data}；data 為 null 代表刪除。col 'settings' 的 id 是 budget、plan 或 funds。 */
 function applyOp(d, op) {
   const { col, id, data } = op;
@@ -48,7 +48,7 @@ function applyOp(d, op) {
 /* 把還沒同步的修改套在最新的雲端資料上（別台裝置先存了也不會被蓋掉）。
    op.prev 是這台修改前看到的那筆資料：雲端那筆如果在這段時間也被改過，就逐欄合併——
    只有這台改的欄位用這台的值，其他欄位保留雲端的；兩邊改到同一欄才算衝突（用這台的值，並回報）。 */
-const COL_NAME = { entries: '記帳', goals: '目標', fixed: '固定支出', holdings: '持股', accounts: '帳戶', liabilities: '負債', reserves: '預留金', monthly: '月份資料', settings: '設定' };
+const COL_NAME = { entries: '記帳', goals: '目標', fixed: '固定支出', holdings: '持股', accounts: '帳戶', liabilities: '負債', reserves: '預留金', snapshots: '資產快照', monthly: '月份資料', settings: '設定' };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function getRec(d, col, id) {
   if (col === 'settings') return d[id] || null;
