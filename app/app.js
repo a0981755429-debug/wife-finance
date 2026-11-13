@@ -17,7 +17,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-let rocLabel=ym=>{const[y,m]=ym.split('-');return`${+m}月`};
+const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
 
@@ -101,7 +101,7 @@ const loading=()=>S.loaded.size<6;
 function niceMax(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v)));const f=v/p;return(f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p}
 const kfmt=v=>Math.abs(v)>=10000?(v/10000).toFixed(Math.abs(v)%10000?1:0)+'萬':fmt(v);
 
-function attachTip(box,svg,W,getHtml){
+function attachTip(box,svg,getHtml){
   let tip=box.querySelector('.tip');if(!tip){tip=document.createElement('div');tip.className='tip';tip.hidden=true;box.appendChild(tip)}
   svg.querySelectorAll('[data-i]').forEach(r=>{
     const show=ev=>{const i=+r.dataset.i;const h=getHtml(i);if(!h){tip.hidden=true;return}
@@ -129,7 +129,7 @@ function barChart(box,labels,inc,exp,tipFn){
     bars+=`<rect class="hit" data-i="${i}" tabindex="0" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T}"/>`;
   });
   box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="每月收入與支出長條圖">${g}${bars}</svg>`;
-  attachTip(box,box.querySelector('svg'),W,tipFn);
+  attachTip(box,box.querySelector('svg'),tipFn);
 }
 function lineChart(box,labels,vals,tipFn,aria){
   const W=720,H=170,L=46,R=12,T=14,B=26;const n=labels.length;
@@ -145,7 +145,7 @@ function lineChart(box,labels,vals,tipFn,aria){
   const last=pts[pts.length-1];
   const endLbl=`<text x="${Math.min(x(last[0]),W-R-4)}" y="${y(last[1])-10}" text-anchor="end" style="fill:var(--ink);font-weight:500">${kfmt(last[1])}</text>`;
   box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">${g}<path class="area" d="${area}"/><path class="line" d="${d}"/><circle class="dot" cx="${x(last[0])}" cy="${y(last[1])}" r="4.5"/>${endLbl}${lab}</svg>`;
-  attachTip(box,box.querySelector('svg'),W,tipFn);
+  attachTip(box,box.querySelector('svg'),tipFn);
 }
 
 /* ---------- 總覽 ---------- */
@@ -278,7 +278,8 @@ function renderPlan(){
   const{p,out}=projection();
   ['save','inc','liv'].forEach(k=>{const el=$('#pl-'+k);if(document.activeElement!==el)el.value=k==='save'?(S.plan.savings??''):p[k]||''});
   $('#pl-save').placeholder='例如 200000';
-  $('#pl-hint').textContent=`收入預設用最近 ${p.st.ms.length} 個月的中位數 ${money(p.st.inc)}；生活費預設用${p.budT?'預算合計':'最近月份的中位數'} ${money(p.budT||p.st.liv)}。改了就會記住。`;
+  const hasInc=S.plan.income!=null&&S.plan.income!=='',hasLiv=S.plan.living!=null&&S.plan.living!=='';
+  $('#pl-hint').textContent=`收入${hasInc?`用你填的 ${money(p.inc)}（最近 ${p.st.ms.length} 個月中位數是 ${money(p.st.inc)}）`:`用最近 ${p.st.ms.length} 個月的中位數 ${money(p.st.inc)}`}；生活費${hasLiv?`用你填的 ${money(p.liv)}`:p.budT?`用預算合計 ${money(p.budT)}`:`用最近月份的中位數 ${money(p.st.liv)}`}。清空欄位就會改回預設。存款是現金合計，買進 0050 的錢會從這裡移到投資。`;
   const low=out.reduce((a,b)=>b.bal<a.bal?b:a,out[0]);const end=out[out.length-1];
   const neg=out.filter(o=>o.net<0);
   $('#pl-kpis').innerHTML=kpi('一年後存款',money(end.bal),`比現在 ${end.bal-p.save>=0?'多':'少'} ${money(Math.abs(end.bal-p.save))}`,end.bal<p.save?'neg':'pos')+

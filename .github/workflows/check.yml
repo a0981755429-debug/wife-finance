@@ -1,0 +1,21 @@
+name: 檢查程式碼
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 語法檢查
+        run: |
+          node --check app/app.js
+          node --check app/smoney.js
+      - name: smoney 匯入測試
+        run: node --test tests/*.test.js
