@@ -1,0 +1,36 @@
+name: 建立版本
+
+# 合併到 main、檢查通過後，依 app.js 的 VERSION 建立標籤與 Release（同一版本只建一次）。
+# claude.ai 上的家計簿由 Claude 用同一份 app/ 發布，網址不變。
+on:
+  workflow_run:
+    workflows: [檢查程式碼]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: 讀取版本
+        id: v
+        run: |
+          v=$(grep -oP "const VERSION='\K[\d.]+" app/app.js)
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          awk -v v="$v" '$0 ~ "^## "v {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+      - name: 建立 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG 已經有了"; exit 0; fi
+          mkdir -p dist && cp app/* dist/ && (cd dist && zip -q ../wife-finance-$TAG.zip *)
+          gh release create "$TAG" --target "$SHA" --title "家計簿 $TAG" --notes-file notes.md "wife-finance-$TAG.zip"

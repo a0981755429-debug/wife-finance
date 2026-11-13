@@ -17,6 +17,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const VERSION='1.1.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -232,18 +233,25 @@ function armDelete(container,col){container.addEventListener('click',e=>{const b
   b.classList.add('arm');b.textContent='確定刪除';setTimeout(()=>{if(b.isConnected){b.classList.remove('arm');b.textContent='刪除'}},3000)})}
 armDelete($('#lg-list'),'entries');
 let pending=null;
-$('#imp-file').addEventListener('change',async e=>{const f=e.target.files[0];pending=null;$('#imp-go').disabled=true;if(!f)return;
+const ymLabel=ym=>`${roc(+ym.slice(0,4))}/${+ym.slice(5)}月`;
+const STATUS_TXT={new:['新月份','inc'],changed:['有變動','exp'],same:['沒變','']};
+function renderImpPreview(){const box=$('#imp-preview');if(!pending){box.innerHTML='';return}
+  const d=pending.diff;const tot=t=>t?`<span class="num" style="white-space:nowrap">+${fmt(t.i)} / −${fmt(t.e)}</span>`:'<span class="muted">—</span>';
+  box.innerHTML=`<table><thead><tr><th>月份</th><th>狀態</th><th class="r">目前（收 / 支）</th><th class="r">匯入後（收 / 支）</th><th class="r">筆數</th></tr></thead><tbody>${d.map(x=>{const[t,c]=STATUS_TXT[x.status];
+    return`<tr class="${x.status==='same'?'muted':''}"><td>${ymLabel(x.ym)}</td><td>${c?`<span class="pill ${c}">${t}</span>`:`<span class="small muted">${t}</span>`}</td><td class="r">${tot(x.old)}</td><td class="r">${tot(x.new)}</td><td class="num r">${x.old&&x.old.n?`${x.old.n} → `:''}${x.new.n}</td></tr>`}).join('')}</tbody></table>`}
+$('#imp-file').addEventListener('change',async e=>{const f=e.target.files[0];pending=null;$('#imp-go').disabled=true;renderImpPreview();if(!f)return;
   try{const p=parseSmoney(await f.text());const ms=Object.keys(p.by).sort();if(!ms.length)throw new Error('檔案裡沒有可以匯入的收支記錄');
-    pending=p;$('#imp-go').disabled=false;
-    $('#imp-msg').textContent=`找到 ${p.n.toLocaleString()} 筆，${ms[0].replace('-','/')} 到 ${ms[ms.length-1].replace('-','/')}，共 ${ms.length} 個月${p.skipped?`（略過 ${p.skipped} 筆格式不對的資料）`:''}。按「匯入」開始。`}
+    p.diff=diffMonths(p.by,S.monthly);const todo=p.diff.filter(x=>x.status!=='same');pending=p;renderImpPreview();
+    $('#imp-go').disabled=!todo.length;
+    $('#imp-msg').textContent=`找到 ${p.n.toLocaleString()} 筆，${ymLabel(ms[0])} 到 ${ymLabel(ms[ms.length-1])}。`+(todo.length?`會更新 ${todo.length} 個月${ms.length>todo.length?`，其餘 ${ms.length-todo.length} 個月跟現在一樣，會跳過`:''}。按「匯入」開始。`:'每個月都跟現在一樣，不用匯入。')+(p.skipped?`（略過 ${p.skipped} 筆格式不對的資料）`:'')}
   catch(err){$('#imp-msg').textContent='無法讀取：'+(err.message||err)}});
-$('#imp-go').addEventListener('click',async()=>{if(!pending)return;const ms=Object.keys(pending.by).sort();$('#imp-go').disabled=true;let done=0;
+$('#imp-go').addEventListener('click',async()=>{if(!pending)return;const ms=pending.diff.filter(x=>x.status!=='same').map(x=>x.ym);$('#imp-go').disabled=true;let done=0;
   for(const ym of ms){const old=S.monthly[ym]||{};const d={ym,rows:pending.by[ym],source:'smoney',importedAt:new Date().toISOString()};
     if(old.extra)d.extra=old.extra;if(old.note)d.note=old.note;
     S.monthly[ym]=d;
-    if(S.db){try{await S.db.collection('monthly').doc(ym).set(d)}catch(e){saveErr(e);$('#imp-msg').textContent=`匯入到 ${ym} 時失敗，已完成 ${done} 個月。`;renderAll();return}}
+    if(S.db){try{await S.db.collection('monthly').doc(ym).set(d)}catch(e){saveErr(e);$('#imp-msg').textContent=`匯入到 ${ymLabel(ym)} 時失敗，已完成 ${done} 個月。`;renderAll();return}}
     done++;$('#imp-msg').textContent=`匯入中… ${done}/${ms.length} 個月`}
-  pending=null;$('#imp-file').value='';$('#imp-msg').textContent=`完成，已更新 ${done} 個月。`;toast('匯入完成');renderAll()});
+  pending=null;renderImpPreview();$('#imp-file').value='';$('#imp-msg').textContent=`完成，已更新 ${done} 個月：${ms.map(ymLabel).join('、')}。`;toast('匯入完成');renderAll()});
 
 /* ---------- 預算 ---------- */
 $('#bg-month').addEventListener('change',renderBudget);
@@ -347,7 +355,7 @@ function renderInvest(){
   const upd=hs.map(h=>h.updatedAt||'').sort().pop();$('#iv-upd').textContent=upd?`現價更新於 ${upd.slice(0,10).replace(/-/g,'/')}`:'';
   $('#iv-kpis').innerHTML=kpi('市值',money(mv),`${hs.length} 檔`)+kpi('投入成本',money(cost))+kpi('未實現損益',(pnl>=0?'+':'')+money(pnl),cost?`報酬率 ${(pnl/cost*100).toFixed(1)}%`:'',pnl<0?'neg':'pos')+kpi('預估年配息',div?money(div):'—',div?`約每月 ${money(div/12)}`:'在表格填「每股年配息」就會算');
   if(loading()&&!hs.length){$('#iv-table').innerHTML='<div class="empty">載入中…</div>';return}
-  if(!hs.length){guarded($('#iv-table'),'<div class="empty">還沒有持股。用右下的表單新增，或傳券商截圖給我。</div>');$('#iv-alloc').innerHTML='';return}
+  if(!hs.length){guarded($('#iv-table'),'<div class="empty">還沒有持股。用上面的「從券商截圖更新」，或右下的表單新增。</div>');$('#iv-alloc').innerHTML='';return}
   const hid=h=>esc(h.id);
   guarded($('#iv-table'),`<table><thead><tr><th>股票</th><th class="r">股數</th><th class="r">付出成本</th><th class="r">均價</th><th class="r">現價</th><th class="r">市值</th><th class="r">損益</th><th class="r">報酬率</th><th class="r">每股年配息</th><th></th></tr></thead><tbody>${hs.map((h,i)=>{const c=cs[i];return`<tr data-hid="${hid(h)}">
     <td><div class="num">${esc(h.code)}</div><div class="small muted">${esc(h.name)}</div></td>
@@ -368,6 +376,34 @@ $('#iv-table').addEventListener('change',e=>{const el=e.target.closest('[data-k]
 armDelete($('#iv-table'),'holdings');
 $('#hold-form').addEventListener('submit',e=>{e.preventDefault();const code=$('#h-code').value.trim().toUpperCase();const id=code.replace(/[^A-Za-z0-9_\-.~:@+]/g,'')||uid();
   put('holdings',id,{code,name:$('#h-name').value.trim(),shares:Math.round(+$('#h-shares').value),cost:Math.round(+$('#h-cost').value),price:+$('#h-price').value,updatedAt:new Date().toISOString()});e.target.reset();toast('已新增 '+code)});
+
+/* 券商截圖 → 持股 */
+let shotDiff=null,sampleFn=null;
+(async()=>{try{sampleFn=window.claude&&await window.claude.use('sample')}catch(e){sampleFn=null}
+  const caps=sampleFn&&await sampleFn.limits().catch(()=>null);
+  if(!caps||!caps.images){$('#shot-msg').textContent='這個畫面無法讀圖（例如沒有登入 claude.ai）。也可以把截圖傳給我，我幫你更新。';return}
+  const inp=$('#shot-file');inp.accept=caps.images.mediaTypes.join(',');inp.disabled=false;$('#shot-max').textContent=`一次最多 ${caps.images.maxCount} 張。`;
+  inp.addEventListener('change',()=>{$('#shot-go').disabled=!inp.files.length;shotDiff=null;renderShot()});
+})();
+const SHOT_ERR={not_granted:'沒有允許讀圖，所以沒辦法辨識。',rate_limited:'讀得太頻繁了，等一兩分鐘再試。',image_rejected:'圖片格式不對或張數太多。',invalid_json:'沒讀出持股表，換一張更清楚的截圖再試。',refused:'這張圖無法辨識。'};
+function renderShot(){const box=$('#shot-preview');$('#shot-apply').hidden=!shotDiff;if(!shotDiff){box.innerHTML='';return}
+  const v=(o,k,d=0)=>o&&o[k]!=null?(+o[k]).toLocaleString('zh-TW',{maximumFractionDigits:d}):'—';
+  const cell=(x,k,d)=>x.status==='changed'&&+x.old[k]!==+x.next[k]?`<span class="muted">${v(x.old,k,d)} →</span> <b>${v(x.next,k,d)}</b>`:v(x.next||x.old,k,d);
+  const TX={new:['新增','inc'],changed:['更新','exp'],same:['沒變',''],missing:['截圖裡沒有','']};
+  box.innerHTML=`<table><thead><tr><th></th><th>股票</th><th>狀態</th><th class="r">股數</th><th class="r">付出成本</th><th class="r">現價</th></tr></thead><tbody>${shotDiff.map((x,i)=>{const[t,c]=TX[x.status];const can=x.status==='new'||x.status==='changed';
+    return`<tr><td>${can?`<input type="checkbox" data-shot="${i}" checked aria-label="套用 ${esc(x.code)}">`:''}</td><td><div class="num">${esc(x.code)}</div><div class="small muted">${esc((x.next||x.old).name)}</div></td><td>${c?`<span class="pill ${c}">${t}</span>`:`<span class="small muted">${t}</span>`}</td><td class="r num">${cell(x,'shares')}</td><td class="r num">${cell(x,'cost')}</td><td class="r num">${cell(x,'price',2)}</td></tr>`}).join('')}</tbody></table>
+  <p class="small muted" style="margin:0">請對一下數字跟券商 App 一樣再套用。「截圖裡沒有」的持股不會被刪掉，賣掉了請在上面的表格按刪除。</p>`}
+$('#shot-go').addEventListener('click',async()=>{const files=$('#shot-file').files;if(!sampleFn||!files.length)return;const btn=$('#shot-go');btn.disabled=true;$('#shot-msg').textContent='讀取中…通常要半分鐘左右。';
+  try{const raw=await sampleFn.json(HOLDINGS_PROMPT,{images:files});const list=cleanHoldings(raw);if(!list.length)throw{code:'invalid_json'};
+    shotDiff=diffHoldings(S.holdings,list);const n=shotDiff.filter(x=>x.status==='new'||x.status==='changed').length;
+    $('#shot-msg').textContent=n?`讀到 ${list.length} 檔，${n} 檔要更新。`:`讀到 ${list.length} 檔，跟現在一樣，不用更新。`;renderShot()}
+  catch(e){shotDiff=null;renderShot();$('#shot-msg').textContent=SHOT_ERR[e&&e.code]||('讀取失敗：'+((e&&e.message)||'請稍後再試'))}
+  finally{btn.disabled=false}});
+$('#shot-apply').addEventListener('click',async()=>{if(!shotDiff)return;const pick=[...document.querySelectorAll('[data-shot]:checked')].map(c=>shotDiff[+c.dataset.shot]);
+  if(!pick.length){toast('沒有勾選要更新的股票');return}const now=new Date().toISOString();
+  for(const x of pick){const{id,...rest}=x.old||{};const key=x.old?x.old.id:(x.code.replace(/[^A-Za-z0-9_\-.~:@+]/g,'')||uid());
+    await put('holdings',key,{...rest,code:x.code,name:x.next.name,shares:x.next.shares||0,cost:x.next.cost||0,price:x.next.price||0,updatedAt:now})}
+  shotDiff=null;$('#shot-file').value='';$('#shot-go').disabled=true;renderShot();$('#shot-msg').textContent=`已更新 ${pick.map(x=>x.code).join('、')}。`;toast('持股已更新')});
 
 /* ---------- 固定支出 ---------- */
 function renderFixed(){
@@ -398,6 +434,7 @@ const TABS=['overview','ledger','budget','plan','invest','fixed'];let tab=TABS.i
 function showTab(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));document.querySelectorAll('[data-view]').forEach(v=>v.hidden=v.dataset.view!==t);try{history.replaceState(null,'','#'+t)}catch(e){}renderAll()}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)showTab(b.dataset.tab)});
 function renderAll(){aggCache={};try{({overview:renderOverview,ledger:renderLedger,budget:renderBudget,plan:renderPlan,invest:renderInvest,fixed:renderFixed})[tab]()}catch(err){console.error(err)}}
+$('#ver').textContent=VERSION;
 showTab(tab);
 connect();
 })();

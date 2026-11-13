@@ -123,3 +123,4 @@ select.cell{padding:4px 6px}
 .banner{padding:10px 14px;border-radius:8px;background:var(--warn-soft);color:var(--warn);font-size:14px}
 .stamp{font-family:var(--f-display);color:var(--ink-3);font-size:13px}
 @media (prefers-reduced-motion:no-preference){.bar-fill,.prog>div{transition:width .3s ease}}
+.stamp a{color:inherit;text-decoration-color:var(--ink-3)}

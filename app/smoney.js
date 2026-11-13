@@ -29,4 +29,13 @@ function parseSmoney(text){
     const ym=d.slice(0,7);(by[ym]=by[ym]||[]).push({d,t:kind==='收入'?'i':'e',c:smoneyCat(kind,main,sub,note),s:sub,a,n:note});n++}
   return{by,n,skipped};
 }
-if(typeof module!=='undefined')module.exports={smoneyCat,parseCSV,parseSmoney};
+/* 匯入前比對：每個月跟目前存的資料比，分成新增、有變動、沒變 */
+function monthTotals(rows){let i=0,e=0;for(const r of rows||[])r.t==='i'?i+=r.a:e+=r.a;return{i,e,n:(rows||[]).length}}
+function rowsSig(rows){return(rows||[]).map(r=>[r.d,r.t,r.c,r.s,r.a,r.n].join('|')).sort().join('\n')}
+function diffMonths(by,monthly){
+  return Object.keys(by).sort().map(ym=>{const old=monthly[ym];const nw=monthTotals(by[ym]);
+    if(!old)return{ym,status:'new',old:null,new:nw};
+    const ot=old.rows?monthTotals(old.rows):{i:+old.income||0,e:+old.expense||0,n:0};
+    return{ym,status:old.rows&&rowsSig(old.rows)===rowsSig(by[ym])?'same':'changed',old:ot,new:nw}});
+}
+if(typeof module!=='undefined')module.exports={smoneyCat,parseCSV,parseSmoney,diffMonths};
