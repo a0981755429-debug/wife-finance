@@ -19,7 +19,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.5.0';
+const VERSION='2.6.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -78,7 +78,7 @@ function loadData(d){
   S.budget=d.budget||{};S.plan=d.plan||{};S.goals=d.goals||[];S.fixed=d.fixed||[];S.holdings=d.holdings||[];
   S.accounts=d.accounts||[];S.liabilities=d.liabilities||[];S.reserves=d.reserves||[];S.snapshots=d.snapshots||[];S.trades=d.trades||[];S.invest=d.invest||{};S.funds=d.funds||{};S.flows=d.flows||{};S.ready=true;renderAll();
 }
-function onSyncState(st){setStatus(st.text,st.kind==='error');const b=$('#banner');
+function onSyncState(st){lastSync={kind:st.kind,text:st.text};setStatus(st.text,st.kind==='error');const b=$('#banner');
   if(st.kind==='error'&&S.ready){b.hidden=false;b.textContent=st.text}else if(st.kind==='local'&&st.pending){b.hidden=false;b.textContent='還沒設定 GitHub 金鑰，修改只存在這台裝置，其他裝置看不到。到「設定」分頁填金鑰就會自動同步。'}else b.hidden=true;
   if(tab==='settings')renderSettings()}
 async function start(){
@@ -625,38 +625,85 @@ armDelete($('#fx-table'),'fixed');
 $('#fx-add').addEventListener('click',()=>{put('fixed',uid(),{name:'新項目',kind:'其他',amount:0,freq:'monthly',note:''});toast('已新增，請填寫名稱與金額')});
 
 /* ---------- tabs ---------- */
+/* ---------- 滑出面板 ---------- */
+let sheetNode=null,sheetHome=null,sheetOpener=null;
+function openSheet(title,content,{full=false}={}){
+  closeSheet(true);const body=$('#sheet-body');body.innerHTML='';$('#sheet-title').textContent=title;
+  if(typeof content==='string')body.innerHTML=content;else{sheetNode=content;sheetHome=content.parentNode;content.hidden=false;body.appendChild(content)}
+  sheetOpener=document.activeElement;$('#sheet').classList.toggle('full',!!full);$('#sheet-bg').hidden=false;document.body.classList.add('noscroll');
+  requestAnimationFrame(()=>$('#sheet').classList.add('in'));$('#sheet').focus();
+}
+function closeSheet(quick){
+  if(sheetNode){sheetNode.hidden=true;sheetHome.appendChild(sheetNode);sheetNode=null}
+  $('#sheet').classList.remove('in');$('#sheet-bg').hidden=true;document.body.classList.remove('noscroll');
+  if(!quick&&sheetOpener&&sheetOpener.isConnected)sheetOpener.focus();sheetOpener=null;
+}
+$('#sheet-x').addEventListener('click',()=>closeSheet());
+$('#sheet-bg').addEventListener('click',e=>{if(e.target.id==='sheet-bg')closeSheet()});
+document.addEventListener('keydown',e=>{if($('#sheet-bg').hidden)return;
+  if(e.key==='Escape'){closeSheet();return}
+  if(e.key==='Tab'){const f=[...$('#sheet').querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select,summary')].filter(x=>x.offsetParent);if(!f.length)return;
+    const first=f[0],last=f[f.length-1];if(e.shiftKey&&(document.activeElement===first||document.activeElement===$('#sheet'))){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
+function openPane(name){const pane=document.querySelector(`#st-panes [data-pane="${name}"]`);if(!pane)return;
+  if(name==='sync')$('#tok-help').open=!Sync.hasToken();
+  openSheet(pane.dataset.title,pane,{full:!!pane.dataset.full})}
+
 /* ---------- 設定 ---------- */
+let lastSync={kind:'loading',text:''};
+const fmtDT=iso=>{const d=new Date(iso);return isNaN(d)?'':`${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`};
 function renderSettings(){
-  $('#st-repo').textContent=Sync.repo();$('#st-sync').textContent=$('#status').textContent;
-  $('#st-tok-state').textContent=Sync.hasToken()?'這台裝置已設定金鑰，修改會自動同步。':'這台裝置還沒設定金鑰：可以看資料，但修改不會同步到其他裝置。';
-  $('#st-tok-clear').hidden=!Sync.hasToken();$('#st-now').hidden=!Sync.hasToken();
+  const has=Sync.hasToken(),k=lastSync.kind;
+  const lab={ok:['good','已同步'],syncing:['warn','同步中…'],pending:['warn','有修改，等待同步'],loading:['warn','讀取中…'],error:['bad','同步失敗'],local:['','尚未設定同步']}[k]||['',lastSync.text||'—'];
+  $('#sc-dot').className='dot '+lab[0];$('#sc-state').textContent=lab[1];
+  const at=S.ready?(Sync.plain().savedAt||''):'';
+  $('#sc-time').textContent=!has?'設定金鑰後，修改才會同步到其他裝置':at?`上次存入 ${fmtDT(at)}`:'還沒有存入紀錄';
+  $('#st-now').textContent=has?'立即同步':'設定同步';$('#st-now').disabled=has&&k==='syncing';
+  $('#st-repo').textContent=Sync.repo();$('#st-sync').textContent=lastSync.text||$('#status').textContent;
+  $('#st-tok-state').textContent=has?'這台裝置已設定金鑰，修改會自動同步。':'這台裝置還沒設定金鑰：可以看資料，但修改不會同步到其他裝置。';
+  $('#ms-sync').textContent=has?'已連線':'尚未設定';$('#st-tok-zone').hidden=!has;
   renderHealth();
 }
 function renderHealth(){if(!S.ready)return;
   const a=auditData({monthly:S.monthly,entries:S.entries,holdings:S.holdings});const err=a.issues.filter(i=>i.level==='error'),warn=a.issues.filter(i=>i.level==='warn');
+  $('#ms-check').textContent=a.issues.length?`${a.issues.length} 項待確認`:'無異常';
   $('#hc-kpis').innerHTML=kpi('月份',String(a.months))+kpi('匯入紀錄',a.rows.toLocaleString())+kpi('手動記帳',String(a.entries))+kpi('錯誤',String(err.length),err.length?'要修正':'沒有',err.length?'neg':'pos')+kpi('待核對',String(warn.length),warn.length?'請人工確認':'沒有');
   const list=a.issues.slice(0,50);
   $('#hc-list').innerHTML=list.length?`<table><thead><tr><th>等級</th><th>位置</th><th>說明</th></tr></thead><tbody>${list.map(i=>`<tr><td><span class="pill ${i.level==='error'?'exp':''}">${i.level==='error'?'錯誤':'待核對'}</span></td><td class="num">${esc(i.where)}</td><td>${esc(i.msg)}</td></tr>`).join('')}</tbody></table>${a.issues.length>50?`<p class="small muted">另外還有 ${a.issues.length-50} 項沒列出。</p>`:''}`:'<div class="empty">帳務檢查沒有發現問題。</div>';
   const cs=Sync.conflicts();$('#hc-conf').hidden=!cs.length;
   $('#hc-conf-list').innerHTML=cs.map(c=>`<li><span class="num small muted">${esc((c.at||'').slice(0,16).replace('T',' '))}</span> ${esc(c.label)}：${esc(c.text)}</li>`).join('');
 }
-$('#st-tok-form').addEventListener('submit',async e=>{e.preventDefault();const m=$('#st-tok-msg');m.textContent='檢查金鑰中…';
-  try{await Sync.setToken($('#st-tok').value);$('#st-tok').value='';m.textContent='金鑰可以用，已開始同步。';toast('已設定同步')}
-  catch(err){m.textContent='金鑰不能用：'+Sync.errText(err)}renderSettings()});
+$('#st-menu').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b)openPane(b.dataset.open)});
+const ferr=(id,msg)=>{const e=$('#'+id);e.textContent=msg||'';const inp=document.getElementById(id.replace(/-err$/,''));if(inp)inp.setAttribute('aria-invalid',msg?'true':'false')};
+async function busy(btn,doing,fn){const old=btn.textContent;btn.disabled=true;btn.textContent=doing;let ok=false;try{ok=await fn()}finally{btn.disabled=false;btn.textContent=ok?'已儲存':old;if(ok)setTimeout(()=>{if(btn.isConnected)btn.textContent=old},1800)}}
+document.querySelectorAll('[data-eye]').forEach(b=>b.addEventListener('click',()=>{const i=$('#'+b.dataset.eye);const show=i.type==='password';i.type=show?'text':'password';b.textContent=show?'隱藏':'顯示';b.setAttribute('aria-pressed',show)}));
+$('#st-pw-show').addEventListener('change',e=>['#st-pw-old','#st-pw-new','#st-pw-new2'].forEach(s=>$(s).type=e.target.checked?'text':'password'));
+$('#st-tok-form').addEventListener('submit',async e=>{e.preventDefault();ferr('st-tok-err','');const m=$('#st-tok-msg');m.textContent='';
+  if(!$('#st-tok').value.trim()){ferr('st-tok-err','請貼上 github_pat_ 開頭的金鑰。');return}
+  await busy($('#st-tok-save'),'儲存中…',async()=>{try{await Sync.setToken($('#st-tok').value);$('#st-tok').value='';m.textContent='金鑰可以用，已開始同步。';toast('已設定同步');return true}
+    catch(err){ferr('st-tok-err','金鑰不能用：'+Sync.errText(err));return false}});renderSettings()});
 $('#st-tok-clear').addEventListener('click',async()=>{await Sync.setToken('');$('#st-tok-msg').textContent='已從這台裝置移除金鑰。';renderSettings()});
-$('#st-now').addEventListener('click',()=>Sync.syncNow());
-$('#st-pw-form').addEventListener('submit',async e=>{e.preventDefault();const m=$('#st-pw-msg');const a=$('#st-pw-old').value,b=$('#st-pw-new').value,c=$('#st-pw-new2').value;
-  if(b.length<8){m.textContent='新密碼至少 8 個字。';return}if(b!==c){m.textContent='兩次輸入的新密碼不一樣。';return}
-  m.textContent='更換中…';try{await Sync.changePassword(a,b);e.target.reset();m.textContent='已換成新密碼。其他裝置下次打開要輸入新密碼。';toast('密碼已更換')}
-  catch(err){m.textContent=/decrypt|operation/i.test(String(err&&(err.name||err.message)))?'目前的密碼不對。':'更換失敗：'+Sync.errText(err)}});
+$('#st-now').addEventListener('click',()=>{if(Sync.hasToken())Sync.syncNow();else openPane('sync')});
+$('#st-pw-form').addEventListener('submit',async e=>{e.preventDefault();['st-pw-old-err','st-pw-new-err','st-pw-new2-err'].forEach(x=>ferr(x,''));const m=$('#st-pw-msg');m.textContent='';
+  const a=$('#st-pw-old').value,b=$('#st-pw-new').value,c=$('#st-pw-new2').value;
+  if(b.length<8){ferr('st-pw-new-err','新密碼至少 8 個字。');return}if(b!==c){ferr('st-pw-new2-err','兩次輸入的新密碼不一樣。');return}
+  await busy($('#st-pw-save'),'儲存中…',async()=>{try{await Sync.changePassword(a,b);e.target.reset();m.textContent='已換成新密碼。其他裝置下次打開要輸入新密碼。';toast('密碼已更換');return true}
+    catch(err){if(/decrypt|operation/i.test(String(err&&(err.name||err.message))))ferr('st-pw-old-err','目前的密碼不對。');else ferr('st-pw-new2-err','更換失敗：'+Sync.errText(err));return false}})});
 $('#st-backup').addEventListener('click',()=>{const d=Sync.plain();const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,1)],{type:'application/json'}));a.download=`家計簿備份_${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)});
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,1)],{type:'application/json'}));a.download=`家計簿備份_${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);toast('已下載備份')});
 $('#st-lock').addEventListener('click',()=>Sync.lock());
 $('#hc-conf-clear').addEventListener('click',()=>{Sync.clearConflicts();renderHealth()});
 
 const TABS=['overview','ledger','budget','plan','funds','invest','fixed','settings'];let tab=TABS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
-function showTab(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));document.querySelectorAll('[data-view]').forEach(v=>v.hidden=v.dataset.view!==t);try{history.replaceState(null,'','#'+t)}catch(e){}renderAll()}
+const MORE_TABS=[['budget','預算'],['plan','規劃與目標'],['fixed','固定支出'],['settings','設定']];const scrollAt={};
+function showTab(t){closeSheet(true);if(t!==tab)scrollAt[tab]=window.scrollY;tab=t; // 切回來時回到原本的捲動位置
+  document.querySelectorAll('#tabs button,#bnav [data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));
+  $('#bnav [data-more]').setAttribute('aria-selected',MORE_TABS.some(x=>x[0]===t));
+  document.querySelectorAll('[data-view]').forEach(v=>v.hidden=v.dataset.view!==t);try{history.replaceState(null,'','#'+t)}catch(e){}renderAll();window.scrollTo(0,scrollAt[t]||0)}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)showTab(b.dataset.tab)});
+$('#bnav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.tab)showTab(b.dataset.tab);
+  else openSheet('更多',`<div class="menu" style="border:1px solid var(--rule);border-radius:10px;overflow:hidden">${MORE_TABS.map(([k,n])=>`<button class="mrow" type="button" data-go="${k}"><span class="mt">${n}</span><span class="chev" aria-hidden="true">›</span></button>`).join('')}</div>`)});
+$('#sheet-body').addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b)showTab(b.dataset.go)});
 function renderAll(){aggCache={};scheduleSnapshot();try{({overview:renderOverview,ledger:renderLedger,budget:renderBudget,plan:renderPlan,funds:renderFunds,invest:renderInvest,fixed:renderFixed,settings:renderSettings})[tab]()}catch(err){console.error(err)}}
 $('#ver').textContent=VERSION;
 showTab(tab);

@@ -7,8 +7,8 @@
 <meta name="apple-mobile-web-app-title" content="老婆財務平台">
 <title>老婆財務平台</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="theme-color" content="#f4f6f4" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#121614" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f2f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16121b" media="(prefers-color-scheme: dark)">
 <link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <link rel="icon" type="image/png" href="../favicon.png">
 <link rel="manifest" href="../manifest.webmanifest">
@@ -291,56 +291,73 @@
   </section>
 
   <!-- 設定 -->
-  <section id="v-settings" data-view="settings" class="wrap" style="gap:20px" hidden>
-    <div class="sheet">
-      <h2>同步</h2>
-      <p class="small muted" style="margin:0">資料加密後存在 GitHub 的 <span class="num" id="st-repo"></span>（app/vault.json），網路上只看得到亂碼，要密碼才解得開。</p>
-      <p id="st-sync"></p>
-      <div><button class="btn ghost" id="st-now" type="button">立即同步</button></div>
-    </div>
-    <div class="sheet">
-      <h2>帳務健檢</h2>
-      <p class="small muted" style="margin:0">自動檢查日期、金額、重複記帳和月份資料。只會列出問題，不會自己改或刪帳目。</p>
-      <div class="kpis" id="hc-kpis"></div>
-      <div class="tbl-wrap" id="hc-list"></div>
-      <div id="hc-conf" hidden>
-        <h3>兩台裝置同時修改的紀錄</h3>
-        <p class="small muted" style="margin:0">同一筆資料在兩台裝置都被改過時，只有兩邊改到的同一欄會用這台的值，其他欄位都保留。請確認下面這幾筆是對的。</p>
-        <ul class="small" id="hc-conf-list"></ul>
-        <button class="btn ghost sm" id="hc-conf-clear" type="button">看過了，清除</button>
+  <section id="v-settings" data-view="settings" class="wrap" style="gap:16px" hidden>
+    <div class="sheet" id="sync-card">
+      <div class="sync-row">
+        <span class="dot" id="sc-dot" aria-hidden="true"></span>
+        <div class="sc-text"><strong id="sc-state">讀取中…</strong><span class="small muted" id="sc-time"></span></div>
+        <button class="btn" id="st-now" type="button">立即同步</button>
       </div>
+      <details class="small"><summary>查看詳情</summary>
+        <p class="muted" style="margin:8px 0 4px">資料加密後存在 GitHub 的 <span class="num" id="st-repo"></span>（app/vault.json），網路上只看得到亂碼，要密碼才解得開。</p>
+        <p style="margin:0" id="st-sync"></p>
+      </details>
     </div>
-    <div class="sheet">
-      <h2>GitHub 金鑰（每台裝置設定一次）</h2>
-      <p class="small muted" style="margin:0" id="st-tok-state"></p>
-      <ol class="small" style="margin:0;padding-left:1.4em;line-height:1.8">
-        <li>打開 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub 新增 Fine-grained token</a>。</li>
-        <li>Repository access 選 <b>Only select repositories</b> → 勾 <b>wife-finance</b>。</li>
-        <li>Permissions → Repository permissions → <b>Contents</b> 選 <b>Read and write</b>，其他不用動。</li>
-        <li>按 Generate token，把 github_pat_ 開頭的那串貼到下面。</li>
-      </ol>
-      <form id="st-tok-form" class="row" autocomplete="off">
-        <input id="st-tok" type="password" placeholder="github_pat_…" aria-label="GitHub 金鑰" style="flex:1;min-width:12em">
-        <button class="btn" type="submit">儲存金鑰</button>
-        <button class="btn ghost" id="st-tok-clear" type="button">移除</button>
-      </form>
-      <div id="st-tok-msg" class="small"></div>
+    <div class="sheet menu" id="st-menu">
+      <button class="mrow" type="button" data-open="sync"><span class="mt">同步設定</span><span class="ms" id="ms-sync"></span><span class="chev" aria-hidden="true">›</span></button>
+      <button class="mrow" type="button" data-open="backup"><span class="mt">備份管理</span><span class="ms">下載資料備份</span><span class="chev" aria-hidden="true">›</span></button>
+      <button class="mrow" type="button" data-open="device"><span class="mt">密碼與裝置</span><span class="ms">更改密碼、立即上鎖</span><span class="chev" aria-hidden="true">›</span></button>
+      <button class="mrow" type="button" data-open="check"><span class="mt">帳務檢查</span><span class="ms" id="ms-check"></span><span class="chev" aria-hidden="true">›</span></button>
     </div>
-    <div class="grid2">
-      <div class="sheet">
-        <h3>更換密碼</h3>
-        <form id="st-pw-form" class="form" autocomplete="off">
-          <label class="f" for="st-pw-old">目前的密碼<input id="st-pw-old" type="password" required autocomplete="current-password"></label>
-          <label class="f" for="st-pw-new">新密碼（至少 8 個字）<input id="st-pw-new" type="password" required autocomplete="new-password"></label>
-          <label class="f" for="st-pw-new2">再輸入一次<input id="st-pw-new2" type="password" required autocomplete="new-password"></label>
-          <button class="btn" type="submit">更換</button>
+    <div id="st-panes" hidden>
+      <div class="pane" data-pane="sync" data-title="同步設定" hidden>
+        <p class="small muted" style="margin:0" id="st-tok-state"></p>
+        <details id="tok-help" class="small"><summary>如何設定（每台裝置設定一次）</summary>
+          <ol style="margin:8px 0 0;padding-left:1.4em;line-height:1.8">
+            <li>打開 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub 新增 Fine-grained token</a>。</li>
+            <li>Repository access 選 <b>Only select repositories</b> → 勾 <b>wife-finance</b>。</li>
+            <li>Permissions → Repository permissions → <b>Contents</b> 選 <b>Read and write</b>，其他不用動。</li>
+            <li>按 Generate token，把 github_pat_ 開頭的那串貼到下面。</li>
+          </ol>
+        </details>
+        <form id="st-tok-form" class="stack" autocomplete="off">
+          <label class="f" for="st-tok">GitHub 金鑰
+            <span class="pwbox"><input id="st-tok" type="password" placeholder="github_pat_…" aria-describedby="st-tok-err"><button class="eye" type="button" data-eye="st-tok" aria-pressed="false">顯示</button></span>
+          </label>
+          <div class="ferr" id="st-tok-err" role="alert"></div>
+          <div id="st-tok-msg" class="small"></div>
+          <button class="btn" id="st-tok-save" type="submit">儲存設定</button>
         </form>
-        <div id="st-pw-msg" class="small"></div>
+        <div class="danger-zone" id="st-tok-zone"><button class="btn ghost danger" id="st-tok-clear" type="button">移除這台裝置的金鑰</button></div>
       </div>
-      <div class="sheet">
-        <h3>備份與這台裝置</h3>
-        <p class="small muted" style="margin:0">備份檔是沒加密的 JSON，請存在自己的地方，不要上傳到 GitHub。</p>
-        <div class="row"><button class="btn ghost" id="st-backup" type="button">下載備份</button><button class="btn ghost" id="st-lock" type="button">上鎖並忘記密碼</button></div>
+      <div class="pane" data-pane="backup" data-title="備份管理" hidden>
+        <p class="small muted" style="margin:0">備份檔是 JSON 格式、<b>沒加密</b>，裡面是完整的帳務資料。請存在自己的地方，不要上傳到 GitHub 或傳給別人。</p>
+        <button class="btn" id="st-backup" type="button">下載資料備份</button>
+      </div>
+      <div class="pane" data-pane="device" data-title="密碼與裝置" hidden>
+        <form id="st-pw-form" class="stack" autocomplete="off">
+          <label class="f" for="st-pw-old">目前的密碼<input id="st-pw-old" type="password" required autocomplete="current-password" aria-describedby="st-pw-old-err"></label>
+          <div class="ferr" id="st-pw-old-err" role="alert"></div>
+          <label class="f" for="st-pw-new">新密碼（至少 8 個字）<input id="st-pw-new" type="password" required autocomplete="new-password" aria-describedby="st-pw-new-err"></label>
+          <div class="ferr" id="st-pw-new-err" role="alert"></div>
+          <label class="f" for="st-pw-new2">再輸入一次<input id="st-pw-new2" type="password" required autocomplete="new-password" aria-describedby="st-pw-new2-err"></label>
+          <div class="ferr" id="st-pw-new2-err" role="alert"></div>
+          <label class="small"><input type="checkbox" id="st-pw-show"> 顯示密碼</label>
+          <div id="st-pw-msg" class="small"></div>
+          <button class="btn" id="st-pw-save" type="submit">儲存新密碼</button>
+        </form>
+        <div class="danger-zone"><p class="small muted" style="margin:0 0 8px">上鎖會把這台裝置記住的密碼清掉，下次打開要重新輸入。</p><button class="btn ghost danger" id="st-lock" type="button">上鎖並忘記密碼</button></div>
+      </div>
+      <div class="pane" data-pane="check" data-title="帳務檢查" data-full="1" hidden>
+        <p class="small muted" style="margin:0">自動檢查日期、金額、重複記帳和月份資料。只會列出問題，不會自己改或刪帳目。</p>
+        <div class="kpis" id="hc-kpis"></div>
+        <div class="tbl-wrap" id="hc-list"></div>
+        <div id="hc-conf" hidden>
+          <h3>兩台裝置同時修改的紀錄</h3>
+          <p class="small muted" style="margin:0">同一筆資料在兩台裝置都被改過時，只有兩邊改到的同一欄會用這台的值，其他欄位都保留。請確認下面這幾筆是對的。</p>
+          <ul class="small" id="hc-conf-list"></ul>
+          <button class="btn ghost sm" id="hc-conf-clear" type="button">看過了，清除</button>
+        </div>
       </div>
     </div>
   </section>
@@ -349,6 +366,19 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
+<nav id="bnav" aria-label="主要選單">
+  <button type="button" data-tab="overview">總覽</button>
+  <button type="button" data-tab="ledger">記帳</button>
+  <button type="button" data-tab="funds">資金</button>
+  <button type="button" data-tab="invest">投資</button>
+  <button type="button" data-more="1" aria-haspopup="dialog">更多</button>
+</nav>
+<div id="sheet-bg" hidden>
+  <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">
+    <div class="sheet-head"><h3 id="sheet-title"></h3><button type="button" id="sheet-x" class="sheet-x" aria-label="關閉">✕</button></div>
+    <div id="sheet-body"></div>
+  </div>
+</div>
 <script src="smoney.js"></script>
 <script src="audit.js"></script>
 <script src="funds.js"></script>
