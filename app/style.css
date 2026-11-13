@@ -126,4 +126,8 @@ select.cell{padding:4px 6px}
 .stamp a{color:inherit;text-decoration-color:var(--ink-3)}
 .lock{position:fixed;inset:0;z-index:50;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px}
 .lockbox{display:flex;flex-direction:column;gap:12px;width:min(360px,100%)}
-#pwerr{min-height:1.4em;color:var(--neg,#b4232a)}
+#pwerr{min-height:1.4em;color:var(--bad)}
+.wf{display:flex;flex-direction:column;gap:6px}
+.wf-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--rule-2)}
+.wf-total{font-weight:700;font-size:18px;border-bottom:none;border-top:2px solid var(--ink)}
+.wf-total.neg{color:var(--bad)}
