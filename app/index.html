@@ -42,6 +42,7 @@
     <button role="tab" data-tab="ledger">記帳</button>
     <button role="tab" data-tab="budget">預算</button>
     <button role="tab" data-tab="plan">規劃與目標</button>
+    <button role="tab" data-tab="funds">我的資金</button>
     <button role="tab" data-tab="invest">投資</button>
     <button role="tab" data-tab="fixed">固定支出</button>
     <button role="tab" data-tab="settings">設定</button>
@@ -202,6 +203,41 @@
     </div>
   </section>
 
+  <!-- 我的資金 -->
+  <section id="v-funds" data-view="funds" class="wrap" style="gap:20px" hidden>
+    <div class="sheet">
+      <h2>我的資金</h2>
+      <p class="small muted" style="margin:0">登錄阿臻自己的帳戶、預留款和負債，算出真正能自由運用的錢和淨資產。這裡只記餘額，不會改到記帳和收支報表。</p>
+      <div class="kpis" id="fd-kpis"></div>
+      <div class="banner small" id="fd-warn" hidden></div>
+    </div>
+    <div class="grid2">
+      <div class="sheet">
+        <h3>資金安排試算</h3>
+        <div class="wf" id="fd-flow"></div>
+      </div>
+      <div class="sheet">
+        <h3>安全現金底線</h3>
+        <p class="small muted" style="margin:0">不管怎樣都要留在帳上的錢，一般建議 3～6 個月生活費。可運用現金會先扣掉這筆。</p>
+        <label class="f" for="fd-floor">最低保留現金<input id="fd-floor" type="number" min="0" step="1000"></label>
+      </div>
+    </div>
+    <div class="sheet">
+      <div class="row between"><h3>帳戶與現金</h3><button class="btn ghost sm" id="fd-acc-add" type="button">新增帳戶</button></div>
+      <div class="tbl-wrap" id="fd-acc"></div>
+      <p class="small muted" style="margin:0">改餘額時會記下更新日期，超過 60 天沒更新會提醒。「定存」和「其他」算進資產，但不算可運用現金。</p>
+    </div>
+    <div class="sheet">
+      <div class="row between"><h3>用途預留金</h3><div class="row"><button class="btn ghost sm" id="fd-res-fixed" type="button">從固定支出帶入</button><button class="btn ghost sm" id="fd-res-add" type="button">新增預留</button></div></div>
+      <div class="tbl-wrap" id="fd-res"></div>
+      <p class="small muted" style="margin:0">已經講好要用在某件事的錢（保費、稅、旅遊…），還在帳戶裡但不能拿去花或投資。</p>
+    </div>
+    <div class="sheet">
+      <div class="row between"><h3>負債</h3><button class="btn ghost sm" id="fd-debt-add" type="button">新增負債</button></div>
+      <div class="tbl-wrap" id="fd-debt"></div>
+    </div>
+  </section>
+
   <!-- 固定支出 -->
   <section id="v-fixed" data-view="fixed" class="wrap" style="gap:20px" hidden>
     <div class="sheet">
@@ -274,6 +310,7 @@
 
 <script src="smoney.js"></script>
 <script src="audit.js"></script>
+<script src="funds.js"></script>
 <script src="vault.js"></script>
 <script src="sync.js"></script>
 <script src="app.js"></script>

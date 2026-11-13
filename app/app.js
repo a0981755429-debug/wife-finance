@@ -5,7 +5,8 @@ const NOT_BUDGET=new Set(['保險','房貸']);
 
 const FIXED_KINDS=['貸款','保險','稅費','其他'];
 const GRAYCATS=new Set(['未分類','生活費']);
-const S={monthly:{},entries:[],budget:{},plan:{},goals:[],fixed:[],holdings:[],ready:false};
+const S={monthly:{},entries:[],budget:{},plan:{},goals:[],fixed:[],holdings:[],accounts:[],liabilities:[],reserves:[],funds:{},ready:false};
+const ARR_COLS=['goals','fixed','holdings','accounts','liabilities','reserves'];
 const Q={date:'',prices:{}}; // 每天盤後自動更新的收盤價（quotes.json）
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -18,7 +19,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.1.0';
+const VERSION='2.2.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -55,21 +56,22 @@ function curRec(col,id){if(col==='settings')return S[id]||null;if(col==='monthly
 function put(col,id,data){
   const prev=curRec(col,id);
   if(col==='entries'){const i=S.entries.findIndex(e=>e.id===id);const d={...data,id};i<0?S.entries.push(d):S.entries[i]=d}
-  else if(col==='goals'||col==='fixed'||col==='holdings'){const arr=S[col];const i=arr.findIndex(e=>e.id===id);const d={...data,id};i<0?arr.push(d):arr[i]=d}
+  else if(ARR_COLS.includes(col)){const arr=S[col];const i=arr.findIndex(e=>e.id===id);const d={...data,id};i<0?arr.push(d):arr[i]=d}
   else if(col==='monthly'){S.monthly[id]=data}
   else if(col==='settings'){S[id]=data}
   Sync.op(col,id,data,prev);renderAll();
 }
 function del(col,id){
   const prev=curRec(col,id);
-  if(col==='entries'||col==='goals'||col==='fixed'||col==='holdings')S[col]=S[col].filter(e=>e.id!==id);
+  if(col==='entries'||ARR_COLS.includes(col))S[col]=S[col].filter(e=>e.id!==id);
   Sync.op(col,id,null,prev);renderAll();
 }
 function setStatus(t,err){const s=$('#status');s.textContent=t;s.classList.toggle('err',!!err)}
 
 function loadData(d){
   S.monthly=d.monthly||{};S.entries=(d.entries||[]).slice().sort((p,q)=>(q.date||'').localeCompare(p.date||''));
-  S.budget=d.budget||{};S.plan=d.plan||{};S.goals=d.goals||[];S.fixed=d.fixed||[];S.holdings=d.holdings||[];S.ready=true;renderAll();
+  S.budget=d.budget||{};S.plan=d.plan||{};S.goals=d.goals||[];S.fixed=d.fixed||[];S.holdings=d.holdings||[];
+  S.accounts=d.accounts||[];S.liabilities=d.liabilities||[];S.reserves=d.reserves||[];S.funds=d.funds||{};S.ready=true;renderAll();
 }
 function onSyncState(st){setStatus(st.text,st.kind==='error');const b=$('#banner');
   if(st.kind==='error'&&S.ready){b.hidden=false;b.textContent=st.text}else if(st.kind==='local'&&st.pending){b.hidden=false;b.textContent='還沒設定 GitHub 金鑰，修改只存在這台裝置，其他裝置看不到。到「設定」分頁填金鑰就會自動同步。'}else b.hidden=true;
@@ -88,6 +90,9 @@ $('#lockf').addEventListener('submit',async e=>{e.preventDefault();const btn=$('
 function guarded(el,html){ // don't redraw a block while someone is typing in it
   const a=document.activeElement;
   if(a&&el.contains(a)&&/INPUT|SELECT/.test(a.tagName)){el.dataset.stale='1';return false}
+  // 從一格點到下一格時，change 事件發生在焦點還沒移過去的空檔（activeElement 是 body）；
+  // 這時重畫會把正要輸入的那格換掉，所以等焦點落定再畫。
+  if((!a||a===document.body)&&!guarded.settling){el.dataset.stale='1';clearTimeout(guarded.t);guarded.t=setTimeout(()=>{guarded.settling=true;try{renderAll()}finally{guarded.settling=false}},0);return false}
   el.innerHTML=html;el.dataset.stale='';return true;
 }
 document.addEventListener('focusout',e=>{setTimeout(()=>{if(document.querySelector('[data-stale="1"]')&&!(document.activeElement&&/INPUT|SELECT/.test(document.activeElement.tagName)&&document.activeElement.closest('[data-stale="1"]')))renderAll()},0)});
@@ -380,6 +385,45 @@ armDelete($('#iv-table'),'holdings');
 $('#hold-form').addEventListener('submit',e=>{e.preventDefault();const code=$('#h-code').value.trim().toUpperCase();const id=code.replace(/[^A-Za-z0-9_\-.~:@+]/g,'')||uid();
   put('holdings',id,{code,name:$('#h-name').value.trim(),shares:Math.round(+$('#h-shares').value),cost:Math.round(+$('#h-cost').value),price:+$('#h-price').value,updatedAt:new Date().toISOString()});e.target.reset();toast('已新增 '+code)});
 
+/* ---------- 我的資金 ---------- */
+function holdingsValue(){return S.holdings.reduce((a,h)=>a+(+h.shares||0)*priceOf(h),0)}
+function rowsTable(id,cols,rows,attr){ // 共用的可編輯表格
+  return`<table><thead><tr>${cols.map(c=>`<th class="${c.r?'r':''}">${c.t}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map(r=>`<tr ${attr}="${esc(r.id)}">${cols.map(c=>`<td class="${c.r?'r':''}">${c.html(r)}</td>`).join('')}<td class="r"><button class="btn sm del" type="button" data-del="${esc(r.id)}">刪除</button></td></tr>`).join('')}</tbody></table>`}
+const inNum=(pre,r,k,step=1)=>`<input class="cell" type="number" min="0" step="${step}" id="${pre}-${esc(r.id)}" data-k="${k}" value="${r[k]??''}" placeholder="未填">`;
+const inTxt=(pre,r,k,w='8em',ph='')=>`<input class="cell-t" id="${pre}-${esc(r.id)}" data-k="${k}" value="${esc(r[k])}" placeholder="${ph}" style="min-width:${w}">`;
+function renderFunds(){
+  const st=recentStats();const F=computeFunds({accounts:S.accounts,liabilities:S.liabilities,reserves:S.reserves,funds:S.funds,fixed:S.fixed,holdingsValue:holdingsValue()},today);
+  const has=S.accounts.length>0;
+  $('#fd-kpis').innerHTML=kpi('現金與存款',has?money(F.cash):'未登錄',F.locked?`活存＋現金 ${money(F.liquid)}，定存等 ${money(F.locked)}`:'個人銀行及現金')
+    +kpi('可運用現金',has?money(F.available):'—',has?(F.available<0?'不夠扣預留和底線':'扣除預留及安全底線'):'先登錄帳戶',F.available<0?'neg':'pos')
+    +kpi('用途預留金',money(F.reserved),`${S.reserves.length} 項`)
+    +kpi('已知個人淨資產',has||S.holdings.length?money(F.net):'—',`含投資 ${money(F.invest)}，扣負債 ${money(F.debt)}${F.debtFixed?'（房屋價值沒算，可用「其他」帳戶登錄）':''}`,F.net<0?'neg':'');
+  const step=(lab,v,sign,note)=>`<div class="wf-row"><span>${lab}${note?`<span class="small muted">　${note}</span>`:''}</span><span class="num">${sign}${fmt(v)}</span></div>`;
+  $('#fd-flow').innerHTML=has?step('活存＋現金',F.liquid,'')+step('用途預留金',F.reserved,'− ')+step('安全現金底線',F.floor,'− ',F.floor?'':'還沒設定')
+    +`<div class="wf-row wf-total ${F.available<0?'neg':''}"><span>試算可運用現金</span><span class="num">${F.available<0?'−':''}${fmt(Math.abs(F.available))}</span></div>`
+    +`<p class="small muted" style="margin:0">${F.locked?`定存等不能隨時動用的 ${money(F.locked)} 沒有算進來。`:''}還沒扣除其他沒登錄的未來支出。</p>`
+    :'<div class="empty">先在下面登錄帳戶餘額，就會算出可運用現金。</div>';
+  const floorEl=$('#fd-floor');if(document.activeElement!==floorEl)floorEl.value=S.funds.floor??'';
+  floorEl.placeholder=st.liv?`例如 ${fmt(Math.round(st.liv*3/1000)*1000)}（約 3 個月生活費）`:'例如 60000';
+  $('#fd-warn').innerHTML=F.warnings.length?`<ul>${F.warnings.map(w=>`<li>${w.level==='error'?'<b>錯誤：</b>':''}${esc(w.msg)}</li>`).join('')}</ul>`:'';$('#fd-warn').hidden=!F.warnings.length;
+  const opt=(arr,v)=>arr.map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('');
+  guarded($('#fd-acc'),S.accounts.length?rowsTable('acc',[{t:'帳戶',html:r=>inTxt('an',r,'name','8em','例如 永豐活存')},{t:'類型',html:r=>`<select class="cell" id="ak-${esc(r.id)}" data-k="kind">${opt(ACCOUNT_KINDS,r.kind||'活存')}</select>`},{t:'餘額',r:1,html:r=>inNum('ab',r,'balance')},{t:'更新',html:r=>`<span class="small muted">${r.updatedAt?esc(r.updatedAt.slice(0,10).replace(/-/g,'/')):'—'}</span>`},{t:'備註',html:r=>inTxt('ao',r,'note','8em')}],S.accounts,'data-aid'):'<div class="empty">還沒有帳戶。'+(S.plan.savings?`規劃頁填的目前存款是 ${money(+S.plan.savings)}，可以按「新增帳戶」登錄在哪個帳戶。`:'')+'</div>');
+  guarded($('#fd-res'),S.reserves.length?rowsTable('res',[{t:'用途',html:r=>inTxt('rn',r,'name','7em','例如 保費')},{t:'已預留',r:1,html:r=>inNum('ra',r,'amount')},{t:'預計動用',html:r=>`<input class="cell" type="month" id="rd-${esc(r.id)}" data-k="due" value="${esc(r.due||'')}">`},{t:'備註',html:r=>inTxt('ro',r,'note','10em')}],S.reserves,'data-rid'):'<div class="empty">還沒有預留項目。年繳的保費、稅可以按「從固定支出帶入」。</div>');
+  const loans=F.loans.map(l=>`<tr><td>${esc(l.name)}</td><td class="r num">${fmt(l.principal)}</td><td colspan="3" class="small muted">來自「固定支出」的貸款餘額，要改請到固定支出分頁</td></tr>`).join('');
+  guarded($('#fd-debt'),(S.liabilities.length?rowsTable('debt',[{t:'負債',html:r=>inTxt('ln',r,'name','8em','例如 信用貸款')},{t:'未償本金',r:1,html:r=>inNum('lp',r,'principal')},{t:'年利率 %',r:1,html:r=>inNum('lr',r,'rate',0.01)},{t:'備註',html:r=>inTxt('lo',r,'note','8em')}],S.liabilities,'data-lid'):'')
+    +(loans?`<table><tbody>${loans}</tbody></table>`:'')+(!S.liabilities.length&&!loans?'<div class="empty">沒有登錄負債。</div>':''));
+}
+function armRows(box,attr,col,numKeys,stamp){box.addEventListener('change',e=>{const el=e.target.closest('[data-k]');if(!el)return;const tr=el.closest(`[${attr}]`);const r=S[col].find(x=>x.id===tr.getAttribute(attr));if(!r)return;
+  const{id,...rest}=r;const k=el.dataset.k;let v=el.value;if(numKeys.includes(k))v=v===''?null:(k==='rate'?+v:Math.round(+v));const d={...rest,[k]:v};if(stamp&&k==='balance')d.updatedAt=new Date().toISOString();put(col,id,d)});armDelete(box,col)}
+armRows($('#fd-acc'),'data-aid','accounts',['balance'],true);
+armRows($('#fd-res'),'data-rid','reserves',['amount']);
+armRows($('#fd-debt'),'data-lid','liabilities',['principal','rate']);
+$('#fd-acc-add').addEventListener('click',()=>{put('accounts',uid(),{name:'',kind:'活存',balance:null,note:''});toast('已新增，請填帳戶名稱與餘額')});
+$('#fd-res-add').addEventListener('click',()=>{put('reserves',uid(),{name:'',amount:null,due:'',note:''});toast('已新增，請填用途與金額')});
+$('#fd-debt-add').addEventListener('click',()=>{put('liabilities',uid(),{name:'',principal:null,rate:null,note:''});toast('已新增，請填負債名稱與本金')});
+$('#fd-res-fixed').addEventListener('click',()=>{const add=reservesFromFixed(S.fixed,S.reserves,today);if(!add.length){toast('年繳固定支出都已經帶入了');return}add.forEach(r=>put('reserves',uid(),r));toast(`已帶入 ${add.map(r=>r.name).join('、')}，請對一下實際預留的金額`)});
+$('#fd-floor').addEventListener('change',e=>{const v=e.target.value===''?null:Math.round(+e.target.value);const f={...S.funds};if(v==null)delete f.floor;else f.floor=v;put('settings','funds',f);toast('已更新安全底線')});
+
 /* ---------- 固定支出 ---------- */
 function renderFixed(){
   const fx=[...S.fixed].sort((a,b)=>(a.freq||'').localeCompare(b.freq||'')||(+a.month||0)-(+b.month||0));
@@ -434,10 +478,10 @@ $('#st-backup').addEventListener('click',()=>{const d=Sync.plain();const a=docum
 $('#st-lock').addEventListener('click',()=>Sync.lock());
 $('#hc-conf-clear').addEventListener('click',()=>{Sync.clearConflicts();renderHealth()});
 
-const TABS=['overview','ledger','budget','plan','invest','fixed','settings'];let tab=TABS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
+const TABS=['overview','ledger','budget','plan','funds','invest','fixed','settings'];let tab=TABS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
 function showTab(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));document.querySelectorAll('[data-view]').forEach(v=>v.hidden=v.dataset.view!==t);try{history.replaceState(null,'','#'+t)}catch(e){}renderAll()}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)showTab(b.dataset.tab)});
-function renderAll(){aggCache={};try{({overview:renderOverview,ledger:renderLedger,budget:renderBudget,plan:renderPlan,invest:renderInvest,fixed:renderFixed,settings:renderSettings})[tab]()}catch(err){console.error(err)}}
+function renderAll(){aggCache={};try{({overview:renderOverview,ledger:renderLedger,budget:renderBudget,plan:renderPlan,funds:renderFunds,invest:renderInvest,fixed:renderFixed,settings:renderSettings})[tab]()}catch(err){console.error(err)}}
 $('#ver').textContent=VERSION;
 showTab(tab);
 start();
