@@ -44,7 +44,40 @@ function applyOp(d, op) {
   }
   return d;
 }
-/* 把還沒同步的修改套在最新的雲端資料上（別台裝置先存了也不會被蓋掉） */
-function rebase(base, ops) { const d = JSON.parse(JSON.stringify(base || emptyData())); for (const op of ops) applyOp(d, op); return d; }
+/* 把還沒同步的修改套在最新的雲端資料上（別台裝置先存了也不會被蓋掉）。
+   op.prev 是這台修改前看到的那筆資料：雲端那筆如果在這段時間也被改過，就逐欄合併——
+   只有這台改的欄位用這台的值，其他欄位保留雲端的；兩邊改到同一欄才算衝突（用這台的值，並回報）。 */
+const COL_NAME = { entries: '記帳', goals: '目標', fixed: '固定支出', holdings: '持股', monthly: '月份資料', settings: '設定' };
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function getRec(d, col, id) {
+  if (col === 'settings') return d[id] || null;
+  if (col === 'monthly') return (d.monthly || {})[id] || null;
+  const r = (d[col] || []).find(e => e.id === id); if (!r) return null; const { id: _, ...rest } = r; return rest;
+}
+function merge3(prev, mine, remote, conflictKeys) {
+  const out = { ...remote };
+  for (const k of new Set([...Object.keys(prev), ...Object.keys(mine)])) {
+    if (same(prev[k], mine[k])) continue;             // 這台沒改這欄 → 用雲端的
+    if (!same(prev[k], remote[k]) && !same(remote[k], mine[k])) conflictKeys.push(k); // 兩邊都改了
+    if (k in mine) out[k] = mine[k]; else delete out[k];
+  }
+  return out;
+}
+function rebaseDetailed(base, ops) {
+  const d = JSON.parse(JSON.stringify(base || emptyData())); const conflicts = [];
+  for (const op of ops) {
+    if (!('prev' in op)) { applyOp(d, op); continue; }
+    const remote = getRec(d, op.col, op.id), prev = op.prev, mine = op.data;
+    if (same(remote, prev)) { applyOp(d, op); continue; } // 雲端沒動過
+    const label = (COL_NAME[op.col] || op.col) + ' ' + ((mine && (mine.name || mine.code || mine.note)) || (prev && (prev.name || prev.code || prev.note)) || op.id);
+    if (!mine) { if (remote) conflicts.push({ col: op.col, id: op.id, label, kind: 'kept', text: '這台刪除，但另一台改過，先保留另一台的版本' }); continue; }
+    if (!remote) { applyOp(d, op); if (prev) conflicts.push({ col: op.col, id: op.id, label, kind: 'restored', text: '另一台刪除了，這台又改過，所以保留這台的版本' }); continue; }
+    if (!prev || op.col === 'monthly' || typeof remote !== 'object') { applyOp(d, op); conflicts.push({ col: op.col, id: op.id, label, kind: 'overwrite', text: '兩台同時修改，用了這台的版本' }); continue; }
+    const keys = []; applyOp(d, { col: op.col, id: op.id, data: merge3(prev, mine, remote, keys) });
+    if (keys.length) conflicts.push({ col: op.col, id: op.id, label, kind: 'fields', fields: keys, text: `兩台同時改了「${keys.join('、')}」，用了這台的值` });
+  }
+  return { data: d, conflicts };
+}
+function rebase(base, ops) { return rebaseDetailed(base, ops).data; }
 
-if (typeof module !== 'undefined') module.exports = { VAULT_ITER, deriveVaultKey, newSalt, encryptVault, decryptVault, emptyData, applyOp, rebase };
+if (typeof module !== 'undefined') module.exports = { VAULT_ITER, deriveVaultKey, newSalt, encryptVault, decryptVault, emptyData, applyOp, rebase, rebaseDetailed, getRec };

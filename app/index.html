@@ -112,6 +112,7 @@
       </div>
       <div id="imp-msg" class="small"></div>
       <div class="tbl-wrap" id="imp-preview"></div>
+      <div class="banner small" id="imp-risk" hidden></div>
     </div>
   </section>
 
@@ -221,6 +222,18 @@
       <div><button class="btn ghost" id="st-now" type="button">立即同步</button></div>
     </div>
     <div class="sheet">
+      <h2>帳務健檢</h2>
+      <p class="small muted" style="margin:0">自動檢查日期、金額、重複記帳和月份資料。只會列出問題，不會自己改或刪帳目。</p>
+      <div class="kpis" id="hc-kpis"></div>
+      <div class="tbl-wrap" id="hc-list"></div>
+      <div id="hc-conf" hidden>
+        <h3>兩台裝置同時修改的紀錄</h3>
+        <p class="small muted" style="margin:0">同一筆資料在兩台裝置都被改過時，只有兩邊改到的同一欄會用這台的值，其他欄位都保留。請確認下面這幾筆是對的。</p>
+        <ul class="small" id="hc-conf-list"></ul>
+        <button class="btn ghost sm" id="hc-conf-clear" type="button">看過了，清除</button>
+      </div>
+    </div>
+    <div class="sheet">
       <h2>GitHub 金鑰（每台裝置設定一次）</h2>
       <p class="small muted" style="margin:0" id="st-tok-state"></p>
       <ol class="small" style="margin:0;padding-left:1.4em;line-height:1.8">
@@ -260,6 +273,7 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="smoney.js"></script>
+<script src="audit.js"></script>
 <script src="vault.js"></script>
 <script src="sync.js"></script>
 <script src="app.js"></script>

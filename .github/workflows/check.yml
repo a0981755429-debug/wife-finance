@@ -18,6 +18,7 @@ jobs:
         run: |
           node --check app/app.js
           node --check app/smoney.js
+          node --check app/audit.js
           node --check app/vault.js
           node --check app/sync.js
           node --check tools/quotes-parse.cjs

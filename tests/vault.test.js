@@ -34,3 +34,23 @@ test('兩台裝置都有修改：把這台的修改套在雲端最新版本上�
   assert.strictEqual(out.entries.length, 1);
   assert.strictEqual(cloud.holdings[0].shares, 200); // 原本的不會被改到
 });
+
+test('同一筆被兩台裝置改：不同欄位都保留，改到同一欄才回報衝突', () => {
+  const { rebaseDetailed } = require('../app/vault.js');
+  const prev = { code: '0050', shares: 200, cost: 20000, price: 100 };
+  const cloud = { ...emptyData(), holdings: [{ id: '0050', ...prev, price: 101, div: 3 }] }; // 另一台改了現價、配息
+  const mine = [{ col: 'holdings', id: '0050', prev, data: { ...prev, shares: 300, cost: 30000 } }]; // 這台改股數、成本
+  let r = rebaseDetailed(cloud, mine);
+  assert.deepStrictEqual(r.data.holdings[0], { id: '0050', code: '0050', shares: 300, cost: 30000, price: 101, div: 3 });
+  assert.deepStrictEqual(r.conflicts, []);
+  r = rebaseDetailed(cloud, [{ col: 'holdings', id: '0050', prev, data: { ...prev, price: 99 } }]);
+  assert.strictEqual(r.data.holdings[0].price, 99);
+  assert.deepStrictEqual(r.conflicts.map(c => c.fields), [['price']]);
+  // 這台刪除、另一台改過 → 先保留另一台的
+  r = rebaseDetailed(cloud, [{ col: 'holdings', id: '0050', prev, data: null }]);
+  assert.strictEqual(r.data.holdings.length, 1);
+  assert.strictEqual(r.conflicts[0].kind, 'kept');
+  // 雲端沒動過 → 照常套用、沒有衝突
+  r = rebaseDetailed({ ...emptyData(), holdings: [{ id: '0050', ...prev }] }, [{ col: 'holdings', id: '0050', prev, data: null }]);
+  assert.deepStrictEqual([r.data.holdings, r.conflicts], [[], []]);
+});
