@@ -5,7 +5,7 @@ const NOT_BUDGET=new Set(['保險','房貸']);
 
 const FIXED_KINDS=['貸款','保險','稅費','其他'];
 const GRAYCATS=new Set(['未分類','生活費']);
-const S={monthly:{},entries:[],budget:{},plan:{},goals:[],fixed:[],holdings:[],accounts:[],liabilities:[],reserves:[],funds:{},ready:false};
+const S={monthly:{},entries:[],budget:{},plan:{},goals:[],fixed:[],holdings:[],accounts:[],liabilities:[],reserves:[],funds:{},flows:{},ready:false};
 const ARR_COLS=['goals','fixed','holdings','accounts','liabilities','reserves'];
 const Q={date:'',prices:{}}; // 每天盤後自動更新的收盤價（quotes.json）
 const $=s=>document.querySelector(s);
@@ -19,21 +19,25 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.2.0';
+const VERSION='2.3.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
 
 /* ---------- data ---------- */
 let aggCache={};
+const ovr=()=>(S.flows&&S.flows.overrides)||{};
 function agg(ym){
   if(aggCache[ym])return aggCache[ym];
-  const inc={},exp={};const add=(o,k,v)=>{o[k]=(o[k]||0)+(+v||0)};
+  const inc={},exp={},mv={};let nMv=0;const add=(o,k,v)=>{o[k]=(o[k]||0)+(+v||0)};
+  // 資金移動（轉帳、投資買賣、借入）不算收入也不算支出，另外記在 mv
+  const take=(rec,cat,amt)=>{const f=classify(rec,ovr()).flow;if(MOVE_FLOWS.has(f)){add(mv,f,amt);nMv++;return}add(rec.t==='i'?inc:exp,cat,amt)};
   const m=S.monthly[ym];
-  if(m){for(const src of[m,m.extra||{}]){for(const[k,v]of Object.entries(src.income||{}))add(inc,k,v);for(const[k,v]of Object.entries(src.expense||{}))add(exp,k,v)}
-        for(const r of m.rows||[])add(r.t==='i'?inc:exp,r.c||'其他',r.a);}
-  for(const e of S.entries){if(!e.date||e.date.slice(0,7)!==ym)continue;add(e.type==='income'?inc:exp,e.category||'其他',e.amount)}
-  return aggCache[ym]={inc,exp,ti:sum(inc),te:sum(exp),has:!!m||S.entries.some(e=>e.date&&e.date.slice(0,7)===ym)};
+  if(m){for(const[k,v]of Object.entries(m.income||{}))add(inc,k,v);for(const[k,v]of Object.entries(m.expense||{}))add(exp,k,v);
+        const x=m.extra||{};for(const[k,v]of Object.entries(x.income||{}))take({d:ym+'-00',t:'i',c:k,a:v,n:'extra'},k,v);for(const[k,v]of Object.entries(x.expense||{}))take({d:ym+'-00',t:'e',c:k,a:v,n:'extra'},k,v);
+        for(const r of m.rows||[])take(r,r.c||'其他',r.a);}
+  for(const e of S.entries){if(!e.date||e.date.slice(0,7)!==ym)continue;take({d:e.date,t:e.type==='income'?'i':'e',c:e.category,a:e.amount,n:e.note,flow:e.flow},e.category||'其他',e.amount)}
+  return aggCache[ym]={inc,exp,mv,nMv,ti:sum(inc),te:sum(exp),has:!!m||S.entries.some(e=>e.date&&e.date.slice(0,7)===ym)};
 }
 function years(){const ys=new Set();Object.keys(S.monthly).forEach(k=>ys.add(+k.slice(0,4)));S.entries.forEach(e=>e.date&&ys.add(+e.date.slice(0,4)));return[...ys].sort()}
 function monthsWithData(){const s=new Set(Object.keys(S.monthly));S.entries.forEach(e=>e.date&&s.add(e.date.slice(0,7)));return[...s].sort()}
@@ -63,6 +67,7 @@ function put(col,id,data){
 }
 function del(col,id){
   const prev=curRec(col,id);
+  if(col==='entries'&&prev&&prev.linked)shiftAccounts(accountDeltas(prev),-1); // 刪掉記帳時把帳戶餘額改回來
   if(col==='entries'||ARR_COLS.includes(col))S[col]=S[col].filter(e=>e.id!==id);
   Sync.op(col,id,null,prev);renderAll();
 }
@@ -71,7 +76,7 @@ function setStatus(t,err){const s=$('#status');s.textContent=t;s.classList.toggl
 function loadData(d){
   S.monthly=d.monthly||{};S.entries=(d.entries||[]).slice().sort((p,q)=>(q.date||'').localeCompare(p.date||''));
   S.budget=d.budget||{};S.plan=d.plan||{};S.goals=d.goals||[];S.fixed=d.fixed||[];S.holdings=d.holdings||[];
-  S.accounts=d.accounts||[];S.liabilities=d.liabilities||[];S.reserves=d.reserves||[];S.funds=d.funds||{};S.ready=true;renderAll();
+  S.accounts=d.accounts||[];S.liabilities=d.liabilities||[];S.reserves=d.reserves||[];S.funds=d.funds||{};S.flows=d.flows||{};S.ready=true;renderAll();
 }
 function onSyncState(st){setStatus(st.text,st.kind==='error');const b=$('#banner');
   if(st.kind==='error'&&S.ready){b.hidden=false;b.textContent=st.text}else if(st.kind==='local'&&st.pending){b.hidden=false;b.textContent='還沒設定 GitHub 金鑰，修改只存在這台裝置，其他裝置看不到。到「設定」分頁填金鑰就會自動同步。'}else b.hidden=true;
@@ -197,6 +202,8 @@ function renderOverview(){
     const yearly=S.fixed.filter(f=>f.freq==='yearly').reduce((a,f)=>a+(+f.amount||0),0);
     if(yearly)ins.push(`<li>每年一次的固定支出共 ${money(yearly)}，每月先存 <strong>${money(yearly/12)}</strong> 就不會在繳費月份變赤字。</li>`);
   }
+  const mvY={};let nMvY=0;as.forEach(a=>{nMvY+=a.nMv;for(const[k,v]of Object.entries(a.mv))mvY[k]=(mvY[k]||0)+v});
+  if(nMvY){const net=(mvY.invest_buy||0)-(mvY.invest_sell||0);ins.push(`<li>有 ${nMvY} 筆資金移動沒有算進收支：${esc(mvText(mvY))}。${net>0?`今年投資淨投入 <strong>${money(net)}</strong>，這是存成資產，不是花掉。`:net<0?`今年賣出投資比買進多 ${money(-net)}。`:''}</li>`)}
   $('#ov-ins').innerHTML=ins.join('')||'<li>資料再多一些就能看出趨勢。</li>';
   // table
   let rows='';as.forEach((a,i)=>{if(!a.has)return;const b=a.ti-a.te;rows+=`<tr><td>${i+1}月</td><td class="num r">${fmt(a.ti)}</td><td class="num r">${fmt(a.exp['房貸']||0)}</td><td class="num r">${fmt(living(a))}</td><td class="num r">${fmt(a.te)}</td><td class="num r ${b<0?'neg':'pos'}">${b<0?'−':''}${fmt(Math.abs(b))}</td><td class="small muted">${esc((S.monthly[ms[i]]||{}).note||'')}</td></tr>`});
@@ -207,30 +214,59 @@ $('#ov-years').addEventListener('click',e=>{const b=e.target.closest('[data-y]')
 /* ---------- 記帳 ---------- */
 let eType='expense';
 function fillCats(){const sel=$('#e-cat');const cur=sel.value;const list=eType==='income'?INC_CATS:EXP_CATS;sel.innerHTML=list.map(c=>`<option>${c}</option>`).join('');if(list.includes(cur))sel.value=cur}
-$('#e-type').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;eType=b.dataset.v;$('#e-type').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));fillCats()});
+$('#e-type').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;eType=b.dataset.v;$('#e-type').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));fillCats();fillFlow()});
+const FLOW_HINT={spend:'',income:'',repay:'還貸款、信貸等',transfer:'自己的帳戶之間搬錢，不算收支',invest_buy:'買股票、ETF、基金，是資產轉換不是花掉',invest_sell:'賣股票拿回的錢，不算收入',borrow:'借來的錢，不算收入'};
+function fillFlow(){const sel=$('#e-flow');const cur=sel.value;const t=eType==='income'?'i':'e';sel.innerHTML=flowsFor(t).map(f=>`<option value="${f}">${FLOWS[f]}</option>`).join('');if([...sel.options].some(o=>o.value===cur))sel.value=cur;fillAcct()}
+function fillAcct(){const accts=S.accounts.filter(a=>a.name);const o=accts.map(a=>`<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  const a1=$('#e-acct'),a2=$('#e-acct2');const v1=a1.value,v2=a2.value;a1.innerHTML='<option value="">不指定</option>'+o;a2.innerHTML='<option value="">不指定</option>'+o;a1.value=v1||'';a2.value=v2||'';
+  $('#e-acct').closest('label').hidden=!accts.length;const tr=$('#e-flow').value==='transfer';$('#e-acct2-wrap').hidden=!accts.length||!tr;
+  $('#e-acct2-lab').textContent=eType==='income'?'從哪個帳戶轉出':'轉入哪個帳戶';$('#e-link-wrap').hidden=!a1.value;}
+$('#e-flow').addEventListener('change',fillAcct);$('#e-acct').addEventListener('change',fillAcct);
 $('#e-date').value=`${curYM}-${pad(today.getDate())}`;$('#lg-month').value=curYM;$('#bg-month').value=curYM;
-fillCats();
+fillCats();fillFlow();
 $('#entry-form').addEventListener('submit',e=>{e.preventDefault();const amt=Math.round(+$('#e-amt').value);if(!amt||amt<0){toast('請輸入金額');return}
   const d={date:$('#e-date').value,type:eType,category:$('#e-cat').value,amount:amt,note:$('#e-note').value.trim(),createdAt:new Date().toISOString()};
-  put('entries',uid(),d);$('#e-amt').value='';$('#e-note').value='';$('#lg-month').value=d.date.slice(0,7);toast(`已記下 ${d.category} ${money(amt)}`);$('#e-amt').focus()});
+  const f=$('#e-flow').value;if(f&&f!==(eType==='income'?'income':'spend'))d.flow=f;
+  const a1=$('#e-acct').value,a2=$('#e-acct2').value;if(a1){d.acct=a1;if(f==='transfer'&&a2&&a2!==a1)d.acct2=a2;}
+  if(f==='transfer'&&a1&&!d.acct2){toast('轉帳要選兩個不同的帳戶');return}
+  if(a1&&$('#e-link').checked){d.linked=true;shiftAccounts(accountDeltas(d),1)}
+  put('entries',uid(),d);$('#e-amt').value='';$('#e-note').value='';$('#lg-month').value=d.date.slice(0,7);
+  toast(`已記下 ${d.category} ${money(amt)}${d.flow?`（${FLOWS[d.flow]}）`:''}${d.linked?'，帳戶餘額已調整':''}`);$('#e-amt').focus()});
+/* 記帳連動帳戶餘額：sign=1 記帳時，-1 刪除時還原 */
+function shiftAccounts(deltas,sign){for(const[id,v]of Object.entries(deltas)){const a=S.accounts.find(x=>x.id===id);if(!a)continue;const{id:_,...rest}=a;
+  put('accounts',id,{...rest,balance:Math.round((+a.balance||0)+sign*v),updatedAt:new Date().toISOString()})}}
 $('#lg-month').addEventListener('change',renderLedger);
+const mvText=mv=>Object.entries(mv).filter(([,v])=>v).map(([f,v])=>`${FLOWS[f]} ${money(v)}`).join('、');
+function flowSelect(e){const t=e.type==='income'?'i':'e';const c=e.cls;
+  return`<select class="cell flow-sel ${MOVE_FLOWS.has(c.flow)?'mv':c.flow==='repay'?'rp':''}" data-flow="${esc(e.id)}" aria-label="性質" title="${esc(c.why||'')}">${flowsFor(t).map(f=>`<option value="${f}" ${f===c.flow?'selected':''}>${FLOWS[f]}${f===c.flow&&c.auto&&c.why?'（自動）':''}</option>`).join('')}</select>`}
+let lgRows={};
 function renderLedger(){
+  if(document.activeElement&&!document.activeElement.closest('#entry-form'))fillFlow();
   const ym=$('#lg-month').value||curYM;const[y,m]=ym.split('-');
   $('#lg-title').textContent=`${roc(+y)}年${+m}月記錄`;
   const a=agg(ym);const hist=S.monthly[ym];
-  const own=S.entries.filter(e=>e.date&&e.date.startsWith(ym)).map(e=>({...e,own:true}));
-  const imp=((hist&&hist.rows)||[]).map((r,i)=>({id:'r'+i,date:r.d,type:r.t==='i'?'income':'expense',category:r.c,amount:r.a,note:r.n,sub:r.s}));
-  const list=own.concat(imp).sort((p,q)=>q.date.localeCompare(p.date)||(q.createdAt||'').localeCompare(p.createdAt||''));
+  const own=S.entries.filter(e=>e.date&&e.date.startsWith(ym)).map(e=>({...e,own:true,cls:classify({d:e.date,t:e.type==='income'?'i':'e',c:e.category,a:e.amount,n:e.note,flow:e.flow},ovr())}));
+  const imp=((hist&&hist.rows)||[]).map((r,i)=>({id:'r'+i,date:r.d,type:r.t==='i'?'income':'expense',category:r.c,amount:r.a,note:r.n,sub:r.s,raw:r,cls:classify(r,ovr())}));
+  const xs=[];const xx=(hist&&hist.extra)||{};for(const part of['income','expense'])for(const[k,v]of Object.entries(xx[part]||{})){const raw={d:ym+'-00',t:part==='income'?'i':'e',c:k,a:v,n:'extra'};xs.push({id:'x'+part+k,date:ym+'-01',type:part,category:k,amount:v,note:'另外補記（不在 smoney）',raw,cls:classify(raw,ovr()),extra:true})}
+  const list=own.concat(imp,xs).sort((p,q)=>q.date.localeCompare(p.date)||(q.createdAt||'').localeCompare(p.createdAt||''));
+  lgRows={};list.forEach(e=>lgRows[e.id]=e);
   const legacy=hist&&!hist.rows&&(hist.income||hist.expense);
-  $('#lg-kpis').innerHTML=kpi('收入',money(a.ti))+kpi('支出',money(a.te))+kpi('結餘',money(a.ti-a.te),'',a.ti-a.te<0?'neg':'pos')+kpi('筆數',String(list.length),imp.length?`其中 ${imp.length} 筆從 smoney 匯入`:legacy?'另含匯入的月總計':'');
+  $('#lg-kpis').innerHTML=kpi('收入',money(a.ti),'不含轉帳、賣股、借款')+kpi('支出',money(a.te),'消費＋還款')+kpi('結餘',money(a.ti-a.te),'',a.ti-a.te<0?'neg':'pos')
+    +(a.nMv?kpi('資金移動',`${a.nMv} 筆`,mvText(a.mv)+'，沒算進收支'):kpi('筆數',String(list.length),imp.length?`其中 ${imp.length} 筆從 smoney 匯入`:legacy?'另含匯入的月總計':''));
   if(loading()){$('#lg-list').innerHTML='<div class="empty">載入中…</div>';return}
   const extraNote=hist&&hist.note?`<p class="small muted" style="margin:0">備註：${esc(hist.note)}</p>`:'';
   if(!list.length){$('#lg-list').innerHTML=`<div class="empty">${legacy?'這個月的資料是從 Excel 匯入的月總計，沒有逐筆記錄。':'這個月還沒有記錄，從上面記下第一筆。'}</div>`+extraNote;return}
-  $('#lg-list').innerHTML=extraNote+`<table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th class="r">金額</th><th></th></tr></thead><tbody>${list.map(e=>`<tr><td class="num">${esc(e.date.slice(5).replace('-','/'))}</td><td><span class="pill ${e.type==='income'?'inc':'exp'}">${esc(e.category)}</span>${e.sub&&e.sub!==e.category?` <span class="small muted">${esc(e.sub)}</span>`:''}</td><td>${esc(e.note)}</td><td class="num r ${e.type==='income'?'pos':''}">${e.type==='income'?'+':'−'}${fmt(e.amount)}</td><td class="r">${e.own?`<button class="btn sm del" data-del="${esc(e.id)}" type="button">刪除</button>`:'<span class="small muted">smoney</span>'}</td></tr>`).join('')}</tbody></table>`;
+  const acctName=id=>{const x=S.accounts.find(q=>q.id===id);return x?x.name||'帳戶':''};
+  guarded($('#lg-list'),extraNote+`<table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th>性質</th><th class="r">金額</th><th></th></tr></thead><tbody>${list.map(e=>`<tr class="${MOVE_FLOWS.has(e.cls.flow)?'muted':''}"><td class="num">${e.extra?'補記':esc(e.date.slice(5).replace('-','/'))}</td><td><span class="pill ${e.type==='income'?'inc':'exp'}">${esc(e.category)}</span>${e.sub&&e.sub!==e.category?` <span class="small muted">${esc(e.sub)}</span>`:''}</td><td>${esc(e.note)}${e.acct?`<div class="small muted">${esc(acctName(e.acct))}${e.acct2?' → '+esc(acctName(e.acct2)):''}${e.linked?'・已調整餘額':''}</div>`:''}</td><td>${flowSelect(e)}</td><td class="num r ${e.type==='income'?'pos':''}">${e.type==='income'?'+':'−'}${fmt(e.amount)}</td><td class="r">${e.own?`<button class="btn sm del" data-del="${esc(e.id)}" type="button">刪除</button>`:`<span class="small muted">${e.extra?'Excel':'smoney'}</span>`}</td></tr>`).join('')}</tbody></table>`);
 }
-function armDelete(container,col){container.addEventListener('click',e=>{const b=e.target.closest('[data-del]');if(!b)return;
-  if(b.classList.contains('arm')){del(col,b.dataset.del);toast('已刪除');return}
-  b.classList.add('arm');b.textContent='確定刪除';setTimeout(()=>{if(b.isConnected){b.classList.remove('arm');b.textContent='刪除'}},3000)})}
+$('#lg-list').addEventListener('change',e=>{const sel=e.target.closest('[data-flow]');if(!sel)return;const row=lgRows[sel.dataset.flow];if(!row)return;const f=sel.value;
+  if(row.own){const{own,cls,id,...rest}=row;put('entries',id,{...rest,flow:f});}
+  else{const auto=classify(row.raw,{}).flow;const o={...ovr()};const k=flowSig(row.raw);if(f===auto)delete o[k];else o[k]=f;put('settings','flows',{...(S.flows||{}),overrides:o});}
+  toast(`已改成「${FLOWS[f]}」`)});
+let armed={id:null,until:0}; // 「確定刪除」狀態，表格重畫後也有效
+function armDelete(container,col){container.addEventListener('click',e=>{const b=e.target.closest('[data-del]');if(!b)return;const id=b.dataset.del;
+  if(armed.id===col+':'+id&&Date.now()<armed.until){armed={id:null,until:0};del(col,id);toast('已刪除');return}
+  armed={id:col+':'+id,until:Date.now()+3000};b.classList.add('arm');b.textContent='確定刪除';setTimeout(()=>{if(b.isConnected){b.classList.remove('arm');b.textContent='刪除'}},3000)})}
 armDelete($('#lg-list'),'entries');
 let pending=null;
 const ymLabel=ym=>`${roc(+ym.slice(0,4))}/${+ym.slice(5)}月`;

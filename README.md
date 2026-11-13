@@ -34,6 +34,7 @@
 | `app/vault.js` | 加解密、修改紀錄的套用與逐欄合併 |
 | `app/audit.js` | 帳務健檢、匯入前風險檢查 |
 | `app/funds.js` | 我的資金：可運用現金、淨資產、預留金計算 |
+| `app/flows.js` | 交易性質（消費、還款、轉帳、投資買賣、借入）的判斷與帳戶連動 |
 | `app/sync.js` | 解鎖、讀取、用 GitHub API 自動同步 |
 | `app/smoney.js` | smoney 匯出 CSV 的解析、類別對應、匯入前比對 |
 | `app/vault.json` | 加密的資料檔 |
