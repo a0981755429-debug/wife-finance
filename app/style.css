@@ -124,3 +124,6 @@ select.cell{padding:4px 6px}
 .stamp{font-family:var(--f-display);color:var(--ink-3);font-size:13px}
 @media (prefers-reduced-motion:no-preference){.bar-fill,.prog>div{transition:width .3s ease}}
 .stamp a{color:inherit;text-decoration-color:var(--ink-3)}
+.lock{position:fixed;inset:0;z-index:50;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px}
+.lockbox{display:flex;flex-direction:column;gap:12px;width:min(360px,100%)}
+#pwerr{min-height:1.4em;color:var(--neg,#b4232a)}

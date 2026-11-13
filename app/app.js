@@ -5,7 +5,8 @@ const NOT_BUDGET=new Set(['保險','房貸']);
 
 const FIXED_KINDS=['貸款','保險','稅費','其他'];
 const GRAYCATS=new Set(['未分類','生活費']);
-const S={monthly:{},entries:[],budget:{},plan:{},goals:[],fixed:[],holdings:[],db:null,loaded:new Set()};
+const S={monthly:{},entries:[],budget:{},plan:{},goals:[],fixed:[],holdings:[],ready:false};
+const Q={date:'',prices:{}}; // 每天盤後自動更新的收盤價（quotes.json）
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=n=>Math.round(n||0).toLocaleString('zh-TW');
@@ -17,7 +18,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='1.1.0';
+const VERSION='2.0.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -50,44 +51,35 @@ function catAvg(){ // average per category over months whose categories are reco
 }
 
 /* ---------- db ---------- */
-async function put(col,id,data){
+function put(col,id,data){
   if(col==='entries'){const i=S.entries.findIndex(e=>e.id===id);const d={...data,id};i<0?S.entries.push(d):S.entries[i]=d}
   else if(col==='goals'||col==='fixed'||col==='holdings'){const arr=S[col];const i=arr.findIndex(e=>e.id===id);const d={...data,id};i<0?arr.push(d):arr[i]=d}
+  else if(col==='monthly'){S.monthly[id]=data}
   else if(col==='settings'){S[id]=data}
-  renderAll();
-  if(!S.db)return;
-  try{await S.db.collection(col).doc(id).set(data)}catch(e){saveErr(e)}
+  Sync.op(col,id,data);renderAll();
 }
-async function del(col,id){
+function del(col,id){
   if(col==='entries'||col==='goals'||col==='fixed'||col==='holdings')S[col]=S[col].filter(e=>e.id!==id);
-  renderAll();
-  if(!S.db)return;
-  try{await S.db.collection(col).doc(id).delete()}catch(e){saveErr(e)}
-}
-function saveErr(e){
-  const c=e&&e.code;
-  toast(c==='invalid_argument'?'你目前只有檢視權限，無法修改':c==='quota_exceeded'?'儲存空間已滿，請先刪除一些記錄':'儲存失敗，請稍後再試');
+  Sync.op(col,id,null);renderAll();
 }
 function setStatus(t,err){const s=$('#status');s.textContent=t;s.classList.toggle('err',!!err)}
 
-async function connect(){
-  let db=null;
-  try{db=window.claude&&await window.claude.use('db')}catch(e){db=null}
-  if(!db){
-    setStatus('未連線');
-    const b=$('#banner');b.hidden=false;b.textContent='目前無法連到儲存空間，這次輸入的資料不會被保存。請登入 claude.ai 後重新開啟此頁。';
-    S.loaded=new Set(['monthly','entries','settings','goals','fixed','holdings']);renderAll();return;
-  }
-  S.db=db;
-  const onErr=e=>setStatus('資料同步中斷，請重新整理頁面',true);
-  const mark=k=>{S.loaded.add(k);if(S.loaded.size>=6)setStatus('已同步 · 修改會自動儲存');renderAll()};
-  db.collection('monthly').onSnapshot(s=>{const o={};s.docs.forEach(d=>o[d.id]=d.data());S.monthly=o;mark('monthly')},onErr);
-  db.collection('entries').orderBy('date','desc').limit(1000).onSnapshot(s=>{S.entries=s.docs.map(d=>({...d.data(),id:d.id}));mark('entries')},onErr);
-  db.collection('settings').onSnapshot(s=>{S.budget={};S.plan={};s.docs.forEach(d=>{if(d.id==='budget')S.budget=d.data();if(d.id==='plan')S.plan=d.data()});mark('settings')},onErr);
-  db.collection('goals').onSnapshot(s=>{S.goals=s.docs.map(d=>({...d.data(),id:d.id}));mark('goals')},onErr);
-  db.collection('fixed').onSnapshot(s=>{S.fixed=s.docs.map(d=>({...d.data(),id:d.id}));mark('fixed')},onErr);
-  db.collection('holdings').onSnapshot(s=>{S.holdings=s.docs.map(d=>({...d.data(),id:d.id}));mark('holdings')},onErr);
+function loadData(d){
+  S.monthly=d.monthly||{};S.entries=(d.entries||[]).slice().sort((p,q)=>(q.date||'').localeCompare(p.date||''));
+  S.budget=d.budget||{};S.plan=d.plan||{};S.goals=d.goals||[];S.fixed=d.fixed||[];S.holdings=d.holdings||[];S.ready=true;renderAll();
 }
+function onSyncState(st){setStatus(st.text,st.kind==='error');const b=$('#banner');
+  if(st.kind==='error'&&S.ready){b.hidden=false;b.textContent=st.text}else if(st.kind==='local'&&st.pending){b.hidden=false;b.textContent='還沒設定 GitHub 金鑰，修改只存在這台裝置，其他裝置看不到。到「設定」分頁填金鑰就會自動同步。'}else b.hidden=true;
+  if(tab==='settings')renderSettings()}
+async function start(){
+  fetch('quotes.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(q=>{if(q&&q.prices){Q.date=q.date||'';Q.prices=q.prices;renderAll()}}).catch(()=>{});
+  const r=await Sync.boot({onData:loadData,onState:onSyncState});
+  if(r==='locked'){$('#lock').hidden=false;$('#pw').focus()}
+  else if(r==='error'){$('#lock').hidden=false;$('#lockf').hidden=true;$('#pwerr').textContent='讀不到資料檔，請稍後重新整理。'}
+}
+$('#lockf').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#lockf button');btn.disabled=true;$('#pwerr').textContent='解鎖中…';
+  try{await Sync.unlock($('#pw').value,$('#remember').checked);$('#pw').value='';$('#pwerr').textContent='';$('#lock').hidden=true}
+  catch(err){$('#pwerr').textContent='密碼不對。'}finally{btn.disabled=false}});
 
 /* ---------- render helpers ---------- */
 function guarded(el,html){ // don't redraw a block while someone is typing in it
@@ -97,7 +89,7 @@ function guarded(el,html){ // don't redraw a block while someone is typing in it
 }
 document.addEventListener('focusout',e=>{setTimeout(()=>{if(document.querySelector('[data-stale="1"]')&&!(document.activeElement&&/INPUT|SELECT/.test(document.activeElement.tagName)&&document.activeElement.closest('[data-stale="1"]')))renderAll()},0)});
 const kpi=(lab,val,note,cls='')=>`<div class="kpi"><span class="lab">${lab}</span><span class="val ${cls}">${val}</span>${note?`<span class="note">${note}</span>`:''}</div>`;
-const loading=()=>S.loaded.size<6;
+const loading=()=>!S.ready;
 
 function niceMax(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v)));const f=v/p;return(f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p}
 const kfmt=v=>Math.abs(v)>=10000?(v/10000).toFixed(Math.abs(v)%10000?1:0)+'萬':fmt(v);
@@ -248,8 +240,7 @@ $('#imp-file').addEventListener('change',async e=>{const f=e.target.files[0];pen
 $('#imp-go').addEventListener('click',async()=>{if(!pending)return;const ms=pending.diff.filter(x=>x.status!=='same').map(x=>x.ym);$('#imp-go').disabled=true;let done=0;
   for(const ym of ms){const old=S.monthly[ym]||{};const d={ym,rows:pending.by[ym],source:'smoney',importedAt:new Date().toISOString()};
     if(old.extra)d.extra=old.extra;if(old.note)d.note=old.note;
-    S.monthly[ym]=d;
-    if(S.db){try{await S.db.collection('monthly').doc(ym).set(d)}catch(e){saveErr(e);$('#imp-msg').textContent=`匯入到 ${ymLabel(ym)} 時失敗，已完成 ${done} 個月。`;renderAll();return}}
+    S.monthly[ym]=d;Sync.op('monthly',ym,d);
     done++;$('#imp-msg').textContent=`匯入中… ${done}/${ms.length} 個月`}
   pending=null;renderImpPreview();$('#imp-file').value='';$('#imp-msg').textContent=`完成，已更新 ${done} 個月：${ms.map(ymLabel).join('、')}。`;toast('匯入完成');renderAll()});
 
@@ -347,22 +338,25 @@ armDelete($('#gl-list'),'goals');
 
 /* ---------- 投資 ---------- */
 const isETF=c=>/^00/.test(String(c));
-function holdCalc(h){const mv=(+h.shares||0)*(+h.price||0);const net=mv*(1-0.001425-(isETF(h.code)?0.001:0.003));const cost=+h.cost||0;const pnl=net-cost;
+/* 現價：quotes.json 的收盤價比手動輸入的新就用收盤價 */
+function quoteFor(h){const q=Q.prices[String(h.code).toUpperCase()];return q&&Q.date&&Q.date>(h.updatedAt||'').slice(0,10)?+q:null}
+const priceOf=h=>quoteFor(h)??(+h.price||0);
+function holdCalc(h){const mv=(+h.shares||0)*priceOf(h);const net=mv*(1-0.001425-(isETF(h.code)?0.001:0.003));const cost=+h.cost||0;const pnl=net-cost;
   return{mv,net,cost,pnl,pct:cost?pnl/cost:0,avg:h.shares?cost/h.shares:0,div:(+h.div||0)*(+h.shares||0)}}
 function renderInvest(){
   const hs=[...S.holdings].sort((a,b)=>holdCalc(b).mv-holdCalc(a).mv);
   const cs=hs.map(holdCalc);const mv=cs.reduce((a,c)=>a+c.mv,0),cost=cs.reduce((a,c)=>a+c.cost,0),pnl=cs.reduce((a,c)=>a+c.pnl,0),div=cs.reduce((a,c)=>a+c.div,0);
-  const upd=hs.map(h=>h.updatedAt||'').sort().pop();$('#iv-upd').textContent=upd?`現價更新於 ${upd.slice(0,10).replace(/-/g,'/')}`:'';
+  const auto=hs.some(h=>quoteFor(h)!=null);const upd=auto?Q.date:hs.map(h=>(h.updatedAt||'').slice(0,10)).sort().pop();$('#iv-upd').textContent=upd?`現價${auto?'（收盤價自動更新）':''}：${upd.replace(/-/g,'/')}`:'';
   $('#iv-kpis').innerHTML=kpi('市值',money(mv),`${hs.length} 檔`)+kpi('投入成本',money(cost))+kpi('未實現損益',(pnl>=0?'+':'')+money(pnl),cost?`報酬率 ${(pnl/cost*100).toFixed(1)}%`:'',pnl<0?'neg':'pos')+kpi('預估年配息',div?money(div):'—',div?`約每月 ${money(div/12)}`:'在表格填「每股年配息」就會算');
   if(loading()&&!hs.length){$('#iv-table').innerHTML='<div class="empty">載入中…</div>';return}
-  if(!hs.length){guarded($('#iv-table'),'<div class="empty">還沒有持股。用上面的「從券商截圖更新」，或右下的表單新增。</div>');$('#iv-alloc').innerHTML='';return}
+  if(!hs.length){guarded($('#iv-table'),'<div class="empty">還沒有持股。用右下的表單新增。</div>');$('#iv-alloc').innerHTML='';return}
   const hid=h=>esc(h.id);
   guarded($('#iv-table'),`<table><thead><tr><th>股票</th><th class="r">股數</th><th class="r">付出成本</th><th class="r">均價</th><th class="r">現價</th><th class="r">市值</th><th class="r">損益</th><th class="r">報酬率</th><th class="r">每股年配息</th><th></th></tr></thead><tbody>${hs.map((h,i)=>{const c=cs[i];return`<tr data-hid="${hid(h)}">
     <td><div class="num">${esc(h.code)}</div><div class="small muted">${esc(h.name)}</div></td>
     <td class="r"><input class="cell" type="number" min="0" step="1" id="hs-${hid(h)}" data-k="shares" value="${+h.shares||0}" style="max-width:6.5em"></td>
     <td class="r"><input class="cell" type="number" min="0" step="1" id="hc-${hid(h)}" data-k="cost" value="${+h.cost||0}" style="max-width:7.5em"></td>
     <td class="num r muted">${c.avg.toFixed(2)}</td>
-    <td class="r"><input class="cell" type="number" min="0" step="0.01" id="hp-${hid(h)}" data-k="price" value="${+h.price||0}" style="max-width:6.5em"></td>
+    <td class="r"><input class="cell" type="number" min="0" step="0.01" id="hp-${hid(h)}" data-k="price" value="${priceOf(h)}" style="max-width:6.5em"></td>
     <td class="num r">${fmt(c.mv)}</td>
     <td class="num r ${c.pnl<0?'neg':'pos'}">${c.pnl<0?'−':'+'}${fmt(Math.abs(c.pnl))}</td>
     <td class="num r ${c.pnl<0?'neg':'pos'}">${(c.pct*100).toFixed(2)}%</td>
@@ -376,34 +370,6 @@ $('#iv-table').addEventListener('change',e=>{const el=e.target.closest('[data-k]
 armDelete($('#iv-table'),'holdings');
 $('#hold-form').addEventListener('submit',e=>{e.preventDefault();const code=$('#h-code').value.trim().toUpperCase();const id=code.replace(/[^A-Za-z0-9_\-.~:@+]/g,'')||uid();
   put('holdings',id,{code,name:$('#h-name').value.trim(),shares:Math.round(+$('#h-shares').value),cost:Math.round(+$('#h-cost').value),price:+$('#h-price').value,updatedAt:new Date().toISOString()});e.target.reset();toast('已新增 '+code)});
-
-/* 券商截圖 → 持股 */
-let shotDiff=null,sampleFn=null;
-(async()=>{try{sampleFn=window.claude&&await window.claude.use('sample')}catch(e){sampleFn=null}
-  const caps=sampleFn&&await sampleFn.limits().catch(()=>null);
-  if(!caps||!caps.images){$('#shot-msg').textContent='這個畫面無法讀圖（例如沒有登入 claude.ai）。也可以把截圖傳給我，我幫你更新。';return}
-  const inp=$('#shot-file');inp.accept=caps.images.mediaTypes.join(',');inp.disabled=false;$('#shot-max').textContent=`一次最多 ${caps.images.maxCount} 張。`;
-  inp.addEventListener('change',()=>{$('#shot-go').disabled=!inp.files.length;shotDiff=null;renderShot()});
-})();
-const SHOT_ERR={not_granted:'沒有允許讀圖，所以沒辦法辨識。',rate_limited:'讀得太頻繁了，等一兩分鐘再試。',image_rejected:'圖片格式不對或張數太多。',invalid_json:'沒讀出持股表，換一張更清楚的截圖再試。',refused:'這張圖無法辨識。'};
-function renderShot(){const box=$('#shot-preview');$('#shot-apply').hidden=!shotDiff;if(!shotDiff){box.innerHTML='';return}
-  const v=(o,k,d=0)=>o&&o[k]!=null?(+o[k]).toLocaleString('zh-TW',{maximumFractionDigits:d}):'—';
-  const cell=(x,k,d)=>x.status==='changed'&&+x.old[k]!==+x.next[k]?`<span class="muted">${v(x.old,k,d)} →</span> <b>${v(x.next,k,d)}</b>`:v(x.next||x.old,k,d);
-  const TX={new:['新增','inc'],changed:['更新','exp'],same:['沒變',''],missing:['截圖裡沒有','']};
-  box.innerHTML=`<table><thead><tr><th></th><th>股票</th><th>狀態</th><th class="r">股數</th><th class="r">付出成本</th><th class="r">現價</th></tr></thead><tbody>${shotDiff.map((x,i)=>{const[t,c]=TX[x.status];const can=x.status==='new'||x.status==='changed';
-    return`<tr><td>${can?`<input type="checkbox" data-shot="${i}" checked aria-label="套用 ${esc(x.code)}">`:''}</td><td><div class="num">${esc(x.code)}</div><div class="small muted">${esc((x.next||x.old).name)}</div></td><td>${c?`<span class="pill ${c}">${t}</span>`:`<span class="small muted">${t}</span>`}</td><td class="r num">${cell(x,'shares')}</td><td class="r num">${cell(x,'cost')}</td><td class="r num">${cell(x,'price',2)}</td></tr>`}).join('')}</tbody></table>
-  <p class="small muted" style="margin:0">請對一下數字跟券商 App 一樣再套用。「截圖裡沒有」的持股不會被刪掉，賣掉了請在上面的表格按刪除。</p>`}
-$('#shot-go').addEventListener('click',async()=>{const files=$('#shot-file').files;if(!sampleFn||!files.length)return;const btn=$('#shot-go');btn.disabled=true;$('#shot-msg').textContent='讀取中…通常要半分鐘左右。';
-  try{const raw=await sampleFn.json(HOLDINGS_PROMPT,{images:files});const list=cleanHoldings(raw);if(!list.length)throw{code:'invalid_json'};
-    shotDiff=diffHoldings(S.holdings,list);const n=shotDiff.filter(x=>x.status==='new'||x.status==='changed').length;
-    $('#shot-msg').textContent=n?`讀到 ${list.length} 檔，${n} 檔要更新。`:`讀到 ${list.length} 檔，跟現在一樣，不用更新。`;renderShot()}
-  catch(e){shotDiff=null;renderShot();$('#shot-msg').textContent=SHOT_ERR[e&&e.code]||('讀取失敗：'+((e&&e.message)||'請稍後再試'))}
-  finally{btn.disabled=false}});
-$('#shot-apply').addEventListener('click',async()=>{if(!shotDiff)return;const pick=[...document.querySelectorAll('[data-shot]:checked')].map(c=>shotDiff[+c.dataset.shot]);
-  if(!pick.length){toast('沒有勾選要更新的股票');return}const now=new Date().toISOString();
-  for(const x of pick){const{id,...rest}=x.old||{};const key=x.old?x.old.id:(x.code.replace(/[^A-Za-z0-9_\-.~:@+]/g,'')||uid());
-    await put('holdings',key,{...rest,code:x.code,name:x.next.name,shares:x.next.shares||0,cost:x.next.cost||0,price:x.next.price||0,updatedAt:now})}
-  shotDiff=null;$('#shot-file').value='';$('#shot-go').disabled=true;renderShot();$('#shot-msg').textContent=`已更新 ${pick.map(x=>x.code).join('、')}。`;toast('持股已更新')});
 
 /* ---------- 固定支出 ---------- */
 function renderFixed(){
@@ -430,11 +396,30 @@ armDelete($('#fx-table'),'fixed');
 $('#fx-add').addEventListener('click',()=>{put('fixed',uid(),{name:'新項目',kind:'其他',amount:0,freq:'monthly',note:''});toast('已新增，請填寫名稱與金額')});
 
 /* ---------- tabs ---------- */
-const TABS=['overview','ledger','budget','plan','invest','fixed'];let tab=TABS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
+/* ---------- 設定 ---------- */
+function renderSettings(){
+  $('#st-repo').textContent=Sync.repo();$('#st-sync').textContent=$('#status').textContent;
+  $('#st-tok-state').textContent=Sync.hasToken()?'這台裝置已設定金鑰，修改會自動同步。':'這台裝置還沒設定金鑰：可以看資料，但修改不會同步到其他裝置。';
+  $('#st-tok-clear').hidden=!Sync.hasToken();$('#st-now').hidden=!Sync.hasToken();
+}
+$('#st-tok-form').addEventListener('submit',async e=>{e.preventDefault();const m=$('#st-tok-msg');m.textContent='檢查金鑰中…';
+  try{await Sync.setToken($('#st-tok').value);$('#st-tok').value='';m.textContent='金鑰可以用，已開始同步。';toast('已設定同步')}
+  catch(err){m.textContent='金鑰不能用：'+Sync.errText(err)}renderSettings()});
+$('#st-tok-clear').addEventListener('click',async()=>{await Sync.setToken('');$('#st-tok-msg').textContent='已從這台裝置移除金鑰。';renderSettings()});
+$('#st-now').addEventListener('click',()=>Sync.syncNow());
+$('#st-pw-form').addEventListener('submit',async e=>{e.preventDefault();const m=$('#st-pw-msg');const a=$('#st-pw-old').value,b=$('#st-pw-new').value,c=$('#st-pw-new2').value;
+  if(b.length<8){m.textContent='新密碼至少 8 個字。';return}if(b!==c){m.textContent='兩次輸入的新密碼不一樣。';return}
+  m.textContent='更換中…';try{await Sync.changePassword(a,b);e.target.reset();m.textContent='已換成新密碼。其他裝置下次打開要輸入新密碼。';toast('密碼已更換')}
+  catch(err){m.textContent=/decrypt|operation/i.test(String(err&&(err.name||err.message)))?'目前的密碼不對。':'更換失敗：'+Sync.errText(err)}});
+$('#st-backup').addEventListener('click',()=>{const d=Sync.plain();const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,1)],{type:'application/json'}));a.download=`家計簿備份_${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)});
+$('#st-lock').addEventListener('click',()=>Sync.lock());
+
+const TABS=['overview','ledger','budget','plan','invest','fixed','settings'];let tab=TABS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
 function showTab(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));document.querySelectorAll('[data-view]').forEach(v=>v.hidden=v.dataset.view!==t);try{history.replaceState(null,'','#'+t)}catch(e){}renderAll()}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)showTab(b.dataset.tab)});
-function renderAll(){aggCache={};try{({overview:renderOverview,ledger:renderLedger,budget:renderBudget,plan:renderPlan,invest:renderInvest,fixed:renderFixed})[tab]()}catch(err){console.error(err)}}
+function renderAll(){aggCache={};try{({overview:renderOverview,ledger:renderLedger,budget:renderBudget,plan:renderPlan,invest:renderInvest,fixed:renderFixed,settings:renderSettings})[tab]()}catch(err){console.error(err)}}
 $('#ver').textContent=VERSION;
 showTab(tab);
-connect();
+start();
 })();

@@ -3,6 +3,7 @@ name: 檢查程式碼
 on:
   push:
     branches: [main]
+    paths-ignore: [app/vault.json, app/quotes.json]
   pull_request:
 
 jobs:
@@ -17,6 +18,8 @@ jobs:
         run: |
           node --check app/app.js
           node --check app/smoney.js
-          node --check app/holdings.js
-      - name: 匯入與版本測試
+          node --check app/vault.js
+          node --check app/sync.js
+          node --check tools/quotes-parse.cjs
+      - name: 測試
         run: node --test tests/*.test.js
