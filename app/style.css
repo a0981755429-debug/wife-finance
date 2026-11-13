@@ -53,7 +53,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .kpi{padding:14px 18px;border-left:1px solid var(--rule);display:flex;flex-direction:column;gap:2px;min-width:0}
 .kpi:first-child{border-left:none}
 .kpi .lab{font-size:13px;color:var(--ink-3);letter-spacing:.04em}
-.kpi .val{font-family:var(--f-num);font-size:24px;font-weight:500;font-variant-numeric:tabular-nums}
+.kpi .val{font-family:var(--f-num);font-size:clamp(17px,5vw,24px);white-space:nowrap;font-weight:500;font-variant-numeric:tabular-nums}
 .kpi .note{font-size:12px;color:var(--ink-3)}
 @media (max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(3){border-left:none}.kpi:nth-child(n+3){border-top:1px solid var(--rule)}}
 .pos{color:var(--good)} .neg{color:var(--bad)}
@@ -69,6 +69,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .chart .zero{stroke:var(--ink-3);stroke-width:1}
 .chart .b-inc{fill:var(--inc)} .chart .b-exp{fill:var(--exp)}
 .chart .line{fill:none;stroke:var(--accent);stroke-width:2}
+.chart .line.est{stroke-dasharray:5 4;opacity:.7}
 .chart .area{fill:var(--accent);opacity:.08}
 .chart .dot{fill:var(--accent);stroke:var(--sheet);stroke-width:2}
 .chart .hit{fill:transparent;cursor:default}

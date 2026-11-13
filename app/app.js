@@ -5,8 +5,8 @@ const NOT_BUDGET=new Set(['保險','房貸']);
 
 const FIXED_KINDS=['貸款','保險','稅費','其他'];
 const GRAYCATS=new Set(['未分類','生活費']);
-const S={monthly:{},entries:[],budget:{},plan:{},goals:[],fixed:[],holdings:[],accounts:[],liabilities:[],reserves:[],funds:{},flows:{},ready:false};
-const ARR_COLS=['goals','fixed','holdings','accounts','liabilities','reserves'];
+const S={monthly:{},entries:[],budget:{},plan:{},goals:[],fixed:[],holdings:[],accounts:[],liabilities:[],reserves:[],snapshots:[],funds:{},flows:{},ready:false};
+const ARR_COLS=['goals','fixed','holdings','accounts','liabilities','reserves','snapshots'];
 const Q={date:'',prices:{}}; // 每天盤後自動更新的收盤價（quotes.json）
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -19,7 +19,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.3.0';
+const VERSION='2.4.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -29,15 +29,15 @@ let aggCache={};
 const ovr=()=>(S.flows&&S.flows.overrides)||{};
 function agg(ym){
   if(aggCache[ym])return aggCache[ym];
-  const inc={},exp={},mv={};let nMv=0;const add=(o,k,v)=>{o[k]=(o[k]||0)+(+v||0)};
+  const inc={},exp={},mv={};let nMv=0,rp=0;const add=(o,k,v)=>{o[k]=(o[k]||0)+(+v||0)};
   // 資金移動（轉帳、投資買賣、借入）不算收入也不算支出，另外記在 mv
-  const take=(rec,cat,amt)=>{const f=classify(rec,ovr()).flow;if(MOVE_FLOWS.has(f)){add(mv,f,amt);nMv++;return}add(rec.t==='i'?inc:exp,cat,amt)};
+  const take=(rec,cat,amt)=>{const f=classify(rec,ovr()).flow;if(MOVE_FLOWS.has(f)){add(mv,f,amt);nMv++;return}if(f==='repay')rp+=+amt||0;add(rec.t==='i'?inc:exp,cat,amt)};
   const m=S.monthly[ym];
   if(m){for(const[k,v]of Object.entries(m.income||{}))add(inc,k,v);for(const[k,v]of Object.entries(m.expense||{}))add(exp,k,v);
         const x=m.extra||{};for(const[k,v]of Object.entries(x.income||{}))take({d:ym+'-00',t:'i',c:k,a:v,n:'extra'},k,v);for(const[k,v]of Object.entries(x.expense||{}))take({d:ym+'-00',t:'e',c:k,a:v,n:'extra'},k,v);
         for(const r of m.rows||[])take(r,r.c||'其他',r.a);}
   for(const e of S.entries){if(!e.date||e.date.slice(0,7)!==ym)continue;take({d:e.date,t:e.type==='income'?'i':'e',c:e.category,a:e.amount,n:e.note,flow:e.flow},e.category||'其他',e.amount)}
-  return aggCache[ym]={inc,exp,mv,nMv,ti:sum(inc),te:sum(exp),has:!!m||S.entries.some(e=>e.date&&e.date.slice(0,7)===ym)};
+  return aggCache[ym]={inc,exp,mv,nMv,rp,ti:sum(inc),te:sum(exp),has:!!m||S.entries.some(e=>e.date&&e.date.slice(0,7)===ym)};
 }
 function years(){const ys=new Set();Object.keys(S.monthly).forEach(k=>ys.add(+k.slice(0,4)));S.entries.forEach(e=>e.date&&ys.add(+e.date.slice(0,4)));return[...ys].sort()}
 function monthsWithData(){const s=new Set(Object.keys(S.monthly));S.entries.forEach(e=>e.date&&s.add(e.date.slice(0,7)));return[...s].sort()}
@@ -76,13 +76,13 @@ function setStatus(t,err){const s=$('#status');s.textContent=t;s.classList.toggl
 function loadData(d){
   S.monthly=d.monthly||{};S.entries=(d.entries||[]).slice().sort((p,q)=>(q.date||'').localeCompare(p.date||''));
   S.budget=d.budget||{};S.plan=d.plan||{};S.goals=d.goals||[];S.fixed=d.fixed||[];S.holdings=d.holdings||[];
-  S.accounts=d.accounts||[];S.liabilities=d.liabilities||[];S.reserves=d.reserves||[];S.funds=d.funds||{};S.flows=d.flows||{};S.ready=true;renderAll();
+  S.accounts=d.accounts||[];S.liabilities=d.liabilities||[];S.reserves=d.reserves||[];S.snapshots=d.snapshots||[];S.funds=d.funds||{};S.flows=d.flows||{};S.ready=true;renderAll();
 }
 function onSyncState(st){setStatus(st.text,st.kind==='error');const b=$('#banner');
   if(st.kind==='error'&&S.ready){b.hidden=false;b.textContent=st.text}else if(st.kind==='local'&&st.pending){b.hidden=false;b.textContent='還沒設定 GitHub 金鑰，修改只存在這台裝置，其他裝置看不到。到「設定」分頁填金鑰就會自動同步。'}else b.hidden=true;
   if(tab==='settings')renderSettings()}
 async function start(){
-  fetch('quotes.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(q=>{if(q&&q.prices){Q.date=q.date||'';Q.prices=q.prices;renderAll()}}).catch(()=>{});
+  fetch('quotes.json?t='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(q=>{if(q&&q.prices){Q.date=q.date||'';Q.prices=q.prices}}).catch(()=>{}).finally(()=>{Q.tried=true;renderAll()});
   const r=await Sync.boot({onData:loadData,onState:onSyncState,onConflicts:c=>{toast(`有 ${c.length} 筆被兩台裝置同時修改，詳情在「設定」`);if(tab==='settings')renderSettings()}});
   if(r==='locked'){$('#lock').hidden=false;$('#pw').focus()}
   else if(r==='error'){$('#lock').hidden=false;$('#lockf').hidden=true;$('#pwerr').textContent='讀不到資料檔，請稍後重新整理。'}
@@ -137,7 +137,7 @@ function barChart(box,labels,inc,exp,tipFn){
   box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="每月收入與支出長條圖">${g}${bars}</svg>`;
   attachTip(box,box.querySelector('svg'),tipFn);
 }
-function lineChart(box,labels,vals,tipFn,aria){
+function lineChart(box,labels,vals,tipFn,aria,estN=0){ // estN：前幾個點是估算，畫虛線
   const W=720,H=170,L=46,R=12,T=14,B=26;const n=labels.length;
   const pts=vals.map((v,i)=>v==null?null:[i,v]).filter(Boolean);
   if(!pts.length){box.innerHTML='<div class="empty">還沒有資料</div>';return}
@@ -145,12 +145,13 @@ function lineChart(box,labels,vals,tipFn,aria){
   const span=niceMax(Math.max(mx-mn,1));const step=span/4;mn=Math.floor(mn/step)*step;mx=Math.ceil(mx/step)*step;if(mx===mn)mx=mn+step;
   const slot=(W-L-R)/n;const x=i=>L+slot*i+slot/2;const y=v=>T+(H-T-B)*(1-(v-mn)/(mx-mn));
   let g='';for(let v=mn;v<=mx+1e-6;v+=step){g+=`<line class="${Math.abs(v)<1e-6?'zero':'grid'}" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${kfmt(v)}</text>`}
-  const d=pts.map((p,k)=>(k?'L':'M')+x(p[0])+','+y(p[1])).join('');
+  const path=ps=>ps.map((p,k)=>(k?'L':'M')+x(p[0])+','+y(p[1])).join('');const d=path(pts);
+  const solid=estN?path(pts.filter(p=>p[0]>=estN)):d,dash=estN?path(pts.filter(p=>p[0]<=estN)):'';
   const area=d+`L${x(pts[pts.length-1][0])},${y(Math.max(mn,0))}L${x(pts[0][0])},${y(Math.max(mn,0))}Z`;
   let lab='';labels.forEach((lb,i)=>{lab+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle">${esc(lb)}</text><rect class="hl" data-h="${i}" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T-B}" style="display:none"/><rect class="hit" data-i="${i}" tabindex="0" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T}"/>`});
   const last=pts[pts.length-1];
   const endLbl=`<text x="${Math.min(x(last[0]),W-R-4)}" y="${y(last[1])-10}" text-anchor="end" style="fill:var(--ink);font-weight:500">${kfmt(last[1])}</text>`;
-  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">${g}<path class="area" d="${area}"/><path class="line" d="${d}"/><circle class="dot" cx="${x(last[0])}" cy="${y(last[1])}" r="4.5"/>${endLbl}${lab}</svg>`;
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">${g}<path class="area" d="${area}"/>${dash?`<path class="line est" d="${dash}"/>`:''}<path class="line" d="${solid}"/><circle class="dot" cx="${x(last[0])}" cy="${y(last[1])}" r="4.5"/>${endLbl}${lab}</svg>`;
   attachTip(box,box.querySelector('svg'),tipFn);
 }
 
@@ -427,8 +428,9 @@ function rowsTable(id,cols,rows,attr){ // 共用的可編輯表格
   return`<table><thead><tr>${cols.map(c=>`<th class="${c.r?'r':''}">${c.t}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map(r=>`<tr ${attr}="${esc(r.id)}">${cols.map(c=>`<td class="${c.r?'r':''}">${c.html(r)}</td>`).join('')}<td class="r"><button class="btn sm del" type="button" data-del="${esc(r.id)}">刪除</button></td></tr>`).join('')}</tbody></table>`}
 const inNum=(pre,r,k,step=1)=>`<input class="cell" type="number" min="0" step="${step}" id="${pre}-${esc(r.id)}" data-k="${k}" value="${r[k]??''}" placeholder="未填">`;
 const inTxt=(pre,r,k,w='8em',ph='')=>`<input class="cell-t" id="${pre}-${esc(r.id)}" data-k="${k}" value="${esc(r[k])}" placeholder="${ph}" style="min-width:${w}">`;
+const fundsNow=()=>computeFunds({accounts:S.accounts,liabilities:S.liabilities,reserves:S.reserves,funds:S.funds,fixed:S.fixed,holdingsValue:holdingsValue()},today);
 function renderFunds(){
-  const st=recentStats();const F=computeFunds({accounts:S.accounts,liabilities:S.liabilities,reserves:S.reserves,funds:S.funds,fixed:S.fixed,holdingsValue:holdingsValue()},today);
+  const st=recentStats();const F=fundsNow();renderGrowth(F,st);
   const has=S.accounts.length>0;
   $('#fd-kpis').innerHTML=kpi('現金與存款',has?money(F.cash):'未登錄',F.locked?`活存＋現金 ${money(F.liquid)}，定存等 ${money(F.locked)}`:'個人銀行及現金')
     +kpi('可運用現金',has?money(F.available):'—',has?(F.available<0?'不夠扣預留和底線':'扣除預留及安全底線'):'先登錄帳戶',F.available<0?'neg':'pos')
@@ -459,6 +461,41 @@ $('#fd-res-add').addEventListener('click',()=>{put('reserves',uid(),{name:'',amo
 $('#fd-debt-add').addEventListener('click',()=>{put('liabilities',uid(),{name:'',principal:null,rate:null,note:''});toast('已新增，請填負債名稱與本金')});
 $('#fd-res-fixed').addEventListener('click',()=>{const add=reservesFromFixed(S.fixed,S.reserves,today);if(!add.length){toast('年繳固定支出都已經帶入了');return}add.forEach(r=>put('reserves',uid(),r));toast(`已帶入 ${add.map(r=>r.name).join('、')}，請對一下實際預留的金額`)});
 $('#fd-floor').addEventListener('change',e=>{const v=e.target.value===''?null:Math.round(+e.target.value);const f={...S.funds};if(v==null)delete f.floor;else f.floor=v;put('settings','funds',f);toast('已更新安全底線')});
+
+/* ---------- 資產成長 ---------- */
+const hasAssets=()=>S.accounts.length>0||S.holdings.length>0;
+// 每個月自動存一筆淨資產快照（本月會一直更新到月底）。只在有 GitHub 金鑰的裝置存，行情讀完才算，避免持股市值是舊的。
+let snapT=null;
+function scheduleSnapshot(){if(!S.ready||!Q.tried||!Sync.hasToken())return;clearTimeout(snapT);snapT=setTimeout(takeSnapshot,4000)}
+function takeSnapshot(){if(!hasAssets())return;const snap=snapshotOf(fundsNow(),curYM);const old=S.snapshots.find(x=>x.id===curYM);
+  if(snapChanged(old,snap))put('snapshots',curYM,{...snap,at:new Date().toISOString()})}
+function surplusMap(){const o={};for(const ym of monthsWithData()){const a=agg(ym);o[ym]=a.ti-a.te+a.rp}return o} // 還款大多是本金，負債跟著變少，淨資產不太變，所以往回推時不扣
+const ymShort=ym=>(+ym.slice(5)===1?`${roc(+ym.slice(0,4))}/`:'')+(+ym.slice(5))+'月';
+const ymLong=ym=>`${roc(+ym.slice(0,4))}年${+ym.slice(5)}月`;
+function renderGrowth(F,st){
+  if(!hasAssets()){$('#gr-kpis').innerHTML='';$('#gr-chart').innerHTML='<div class="empty">登錄帳戶或持股後，每個月會自動記下淨資產，畫成成長曲線。</div>';$('#gr-note').textContent='';
+    $('#gr-plan').innerHTML='<div class="empty">先在下面登錄帳戶餘額，就會算出緊急預備金夠幾個月、每月可以投入多少。</div>';return}
+  const live=snapshotOf(F,curYM);const snaps=S.snapshots.filter(x=>x.id!==curYM).concat([{...live,id:curYM}]);
+  const series=netSeries(snaps,surplusMap(),curYM,12);const G=growthStats(series);const estN=series.filter(p=>p.est).length;
+  const diff=(d,lab)=>d?kpi(lab,(d.diff>=0?'+':'−')+money(Math.abs(d.diff)),`跟 ${ymLong(d.ym)}${d.est?'（估算）':''}比`,d.diff<0?'neg':'pos'):kpi(lab,'—','資料還不夠');
+  const spend=median(st.as.map(a=>a.te).filter(v=>v>0)),surplus=median(st.as.filter(a=>a.has).map(a=>a.ti-a.te));
+  const P=investPlan({liquid:F.liquid,reserved:F.reserved,floor:F.floor,living:spend,surplus});
+  $('#gr-kpis').innerHTML=kpi('本月淨資產',money(G.now.net),'即時，含持股市值',G.now.net<0?'neg':'')+diff(G.prev,'比上個月')+diff(G.year||G.first,G.year?'比一年前':'比最早一筆')
+    +kpi('緊急預備金',P.months==null?'—':P.months.toFixed(1)+' 個月',spend?`每月支出約 ${money(spend)}`:'還沒有支出資料',P.months!=null&&P.months<3?'neg':'');
+  lineChart($('#gr-chart'),series.map(p=>ymShort(p.ym)),series.map(p=>p.net),i=>{const p=series[i];if(p.net==null)return`<b>${ymLong(p.ym)}</b><div class="small">那個月沒有記到</div>`;
+    return`<b>${ymLong(p.ym)}${p.est?'（估算）':p.ym===curYM?'（即時）':''}</b><div class="r"><span>淨資產</span><span>${money(p.net)}</span></div>${p.est?'':`<div class="r"><span>現金存款</span><span>${money(p.cash)}</span></div><div class="r"><span>投資</span><span>${money(p.invest)}</span></div><div class="r"><span>負債</span><span>−${fmt(p.debt)}</span></div>`}`},'每月淨資產走勢',estN);
+  $('#gr-note').textContent=(estN?`虛線是用每月收支結餘往回推的估算（沒算股價漲跌，房貸還款當作都是本金），只是參考。`:'')+(Sync.hasToken()?'每個月會自動記下一筆，本月的數字會更新到月底。':'這台裝置沒設 GitHub 金鑰，不會存下每月紀錄，只顯示即時數字。');
+  const row=(lab,v,cls='',note='')=>`<div class="wf-row ${cls}"><span>${lab}${note?`<span class="small muted">　${note}</span>`:''}</span><span class="num">${v}</span></div>`;
+  const tips=[];
+  if(P.surplus<=0)tips.push(`最近 ${st.ms.length} 個月的每月結餘中位數是 <strong>${money(P.surplus)}</strong>，目前沒有穩定的結餘可以投入，先看看「預算」哪一類超支。`);
+  else if(P.short>0)tips.push(`每月結餘約 <strong>${money(P.surplus)}</strong>：建議 <strong>${money(P.toFund)}</strong> 先存進預備金，<strong>${money(P.toInvest)}</strong> 定期定額投入，大約 ${P.fillMonths} 個月補滿。`);
+  else tips.push(`預備金已經夠了，每月結餘約 <strong>${money(P.surplus)}</strong>，可以定期定額投入 <strong>${money(P.toInvest)}</strong>。`);
+  if(P.lump>0)tips.push(`帳上超過目標的 <strong>${money(P.lump)}</strong> 也可以拿去投資，分 6 個月投入的話每月約 ${money(Math.floor(P.lump/6/1000)*1000)}。`);
+  if(F.reserved)tips.push(`用途預留的 ${money(F.reserved)} 已經先扣掉，不算預備金。`);
+  tips.push('買 ETF、基金時，記帳的性質選「投資買入」，就不會被算成花費。');
+  $('#gr-plan').innerHTML=`<div class="wf">${row('活存＋現金 − 用途預留',fmt(P.fund))+row('目標',fmt(P.target),'',P.targetFromFloor?'安全現金底線':`${EMERGENCY_MONTHS} 個月支出`)
+    +row(P.short>0?'還差':'已足夠',fmt(P.short>0?P.short:P.fund-P.target),'wf-total '+(P.short>0?'neg':''))}</div><ul class="insights" style="margin-top:10px">${tips.map(t=>`<li>${t}</li>`).join('')}</ul>`;
+}
 
 /* ---------- 固定支出 ---------- */
 function renderFixed(){
@@ -517,7 +554,7 @@ $('#hc-conf-clear').addEventListener('click',()=>{Sync.clearConflicts();renderHe
 const TABS=['overview','ledger','budget','plan','funds','invest','fixed','settings'];let tab=TABS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
 function showTab(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));document.querySelectorAll('[data-view]').forEach(v=>v.hidden=v.dataset.view!==t);try{history.replaceState(null,'','#'+t)}catch(e){}renderAll()}
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(b)showTab(b.dataset.tab)});
-function renderAll(){aggCache={};try{({overview:renderOverview,ledger:renderLedger,budget:renderBudget,plan:renderPlan,funds:renderFunds,invest:renderInvest,fixed:renderFixed,settings:renderSettings})[tab]()}catch(err){console.error(err)}}
+function renderAll(){aggCache={};scheduleSnapshot();try{({overview:renderOverview,ledger:renderLedger,budget:renderBudget,plan:renderPlan,funds:renderFunds,invest:renderInvest,fixed:renderFixed,settings:renderSettings})[tab]()}catch(err){console.error(err)}}
 $('#ver').textContent=VERSION;
 showTab(tab);
 start();
