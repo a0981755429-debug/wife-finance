@@ -1,0 +1,194 @@
+<title>阿臻的家計簿</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>阿臻的家計簿</h1>
+      <div class="sub">收支記錄、每月預算、未來一年現金流與存錢目標</div>
+    </div>
+    <div class="status" id="status">連線中…</div>
+  </header>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="overview">總覽</button>
+    <button role="tab" data-tab="ledger">記帳</button>
+    <button role="tab" data-tab="budget">預算</button>
+    <button role="tab" data-tab="plan">規劃與目標</button>
+    <button role="tab" data-tab="invest">投資</button>
+    <button role="tab" data-tab="fixed">固定支出</button>
+  </nav>
+  <div id="banner" class="banner" hidden></div>
+
+  <!-- 總覽 -->
+  <section id="v-overview" data-view="overview" class="wrap" style="gap:20px">
+    <div class="row between">
+      <h2 id="ov-title">年度總覽</h2>
+      <div class="chips" id="ov-years"></div>
+    </div>
+    <div class="kpis" id="ov-kpis"></div>
+    <div class="sheet">
+      <div class="row between">
+        <h3>每月收入與支出</h3>
+        <div class="legend"><span><i style="background:var(--inc)"></i>收入</span><span><i style="background:var(--exp)"></i>支出</span></div>
+      </div>
+      <div class="chart" id="ov-chart"></div>
+      <div class="row between"><h3>累計結餘</h3><span class="small muted">從當年 1 月開始累加</span></div>
+      <div class="chart" id="ov-cum"></div>
+    </div>
+    <div class="grid2">
+      <div class="sheet">
+        <div class="row between"><h3>錢花去哪裡</h3><span class="small muted">不含房貸</span></div>
+        <div class="bars" id="ov-cats"></div>
+      </div>
+      <div class="sheet">
+        <h3>觀察</h3>
+        <ul class="insights" id="ov-ins"></ul>
+      </div>
+    </div>
+    <div class="sheet">
+      <h3>逐月明細</h3>
+      <div class="tbl-wrap" id="ov-table"></div>
+    </div>
+  </section>
+
+  <!-- 記帳 -->
+  <section id="v-ledger" data-view="ledger" class="wrap" style="gap:20px" hidden>
+    <div class="sheet">
+      <h2>記一筆</h2>
+      <form id="entry-form" class="form" autocomplete="off">
+        <label class="f">類型
+          <span class="seg" id="e-type"><button type="button" data-v="expense" aria-pressed="true">支出</button><button type="button" data-v="income" aria-pressed="false">收入</button></span>
+        </label>
+        <label class="f" for="e-date">日期<input id="e-date" type="date" required></label>
+        <label class="f" for="e-cat">類別<select id="e-cat"></select></label>
+        <label class="f" for="e-amt">金額（元）<input id="e-amt" type="number" inputmode="numeric" min="1" step="1" required placeholder="例如 350"></label>
+        <label class="f" for="e-note" style="grid-column:span 2">備註<input id="e-note" type="text" placeholder="例如 全聯、午餐"></label>
+        <button class="btn" type="submit">記下來</button>
+      </form>
+    </div>
+    <div class="sheet">
+      <div class="row between">
+        <h2 id="lg-title">本月記錄</h2>
+        <label class="row small muted" for="lg-month">月份 <input id="lg-month" type="month"></label>
+      </div>
+      <div class="kpis" id="lg-kpis"></div>
+      <div class="tbl-wrap" id="lg-list"></div>
+    </div>
+    <div class="sheet">
+      <h2>從 smoney 匯入</h2>
+      <p class="small muted" style="margin:0">在 smoney App 匯出 CSV，選檔案就會依月份更新。檔案裡有的月份會整個換成新資料，所以重複匯入不會算兩次。用 smoney 記帳的話，就不要再在上面手動記同一筆。</p>
+      <div class="row">
+        <input id="imp-file" type="file" accept=".csv,text/csv">
+        <button class="btn" id="imp-go" type="button" disabled>匯入</button>
+      </div>
+      <div id="imp-msg" class="small"></div>
+    </div>
+  </section>
+
+  <!-- 預算 -->
+  <section id="v-budget" data-view="budget" class="wrap" style="gap:20px" hidden>
+    <div class="sheet">
+      <div class="row between">
+        <h2>每月預算</h2>
+        <label class="row small muted" for="bg-month">對照月份 <input id="bg-month" type="month"></label>
+      </div>
+      <p class="small muted" style="margin:0">「過去平均」取自有分類記錄的月份。預算改完會自動儲存。</p>
+      <div class="kpis" id="bg-kpis"></div>
+      <div class="tbl-wrap" id="bg-table"></div>
+    </div>
+  </section>
+
+  <!-- 規劃 -->
+  <section id="v-plan" data-view="plan" class="wrap" style="gap:20px" hidden>
+    <div class="sheet">
+      <h2>未來 12 個月現金流</h2>
+      <div class="form" id="pl-inputs">
+        <label class="f" for="pl-save">目前存款（元）<input id="pl-save" type="number" step="1" min="0"></label>
+        <label class="f" for="pl-inc">預估每月收入<input id="pl-inc" type="number" step="1" min="0"></label>
+        <label class="f" for="pl-liv">預估每月生活費<input id="pl-liv" type="number" step="1" min="0"></label>
+      </div>
+      <p class="small muted" style="margin:0" id="pl-hint"></p>
+      <div class="kpis" id="pl-kpis"></div>
+      <div class="chart" id="pl-chart"></div>
+      <div class="tbl-wrap" id="pl-table"></div>
+    </div>
+    <div class="sheet">
+      <div class="row between"><h2>業績獎金怎麼分</h2><span class="small muted" id="bn-rule"></span></div>
+      <p class="small" style="margin:0" id="bn-why"></p>
+      <div class="form">
+        <label class="f" for="pl-bonus">這個月的業績獎金（元）<input id="pl-bonus" type="number" min="0" step="100"></label>
+      </div>
+      <div class="kpis" id="bn-split"></div>
+      <div class="tbl-wrap" id="bn-hist"></div>
+    </div>
+    <div class="grid2">
+      <div class="sheet">
+        <h3>存款怎麼放</h3>
+        <div id="cash-alloc"></div>
+      </div>
+      <div class="sheet">
+        <h3>理財原則</h3>
+        <ul class="insights" id="pl-advice"></ul>
+      </div>
+    </div>
+    <div class="sheet">
+      <div class="row between"><h2>存錢目標</h2></div>
+      <div id="gl-list"></div>
+      <form id="goal-form" class="form" autocomplete="off">
+        <label class="f" for="g-name">目標名稱<input id="g-name" type="text" required placeholder="例如 日本旅遊"></label>
+        <label class="f" for="g-target">目標金額<input id="g-target" type="number" min="1" step="1" required></label>
+        <label class="f" for="g-saved">已存<input id="g-saved" type="number" min="0" step="1" value="0"></label>
+        <label class="f" for="g-due">期限<input id="g-due" type="month" required></label>
+        <button class="btn" type="submit">新增目標</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- 投資 -->
+  <section id="v-invest" data-view="invest" class="wrap" style="gap:20px" hidden>
+    <div class="sheet">
+      <div class="row between"><h2>股票與 ETF</h2><span class="small muted" id="iv-upd"></span></div>
+      <div class="kpis" id="iv-kpis"></div>
+      <div class="tbl-wrap" id="iv-table"></div>
+      <p class="small muted" style="margin:0">損益已扣掉賣出時的手續費 0.1425% 和交易稅（ETF 0.1%、個股 0.3%），跟券商 App 的「原幣損益試算」算法一樣。現價不會自動更新，改表格裡的現價，或傳新的截圖給我。</p>
+    </div>
+    <div class="grid2">
+      <div class="sheet">
+        <h3>持股比重</h3>
+        <div class="bars" id="iv-alloc"></div>
+      </div>
+      <div class="sheet">
+        <h3>新增持股</h3>
+        <form id="hold-form" class="form" autocomplete="off">
+          <label class="f" for="h-code">代號<input id="h-code" type="text" required placeholder="例如 0056"></label>
+          <label class="f" for="h-name">名稱<input id="h-name" type="text" required placeholder="例如 元大高股息"></label>
+          <label class="f" for="h-shares">股數<input id="h-shares" type="number" min="1" step="1" required></label>
+          <label class="f" for="h-cost">付出成本<input id="h-cost" type="number" min="0" step="1" required></label>
+          <label class="f" for="h-price">現價<input id="h-price" type="number" min="0" step="0.01" required></label>
+          <button class="btn" type="submit">新增</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- 固定支出 -->
+  <section id="v-fixed" data-view="fixed" class="wrap" style="gap:20px" hidden>
+    <div class="sheet">
+      <h2>固定支出與貸款</h2>
+      <p class="small muted" style="margin:0">每年一次的大額支出（保險、稅）會放進現金流預估，也會換算成每月該先存下的金額。</p>
+      <div class="kpis" id="fx-kpis"></div>
+      <div class="tbl-wrap" id="fx-table"></div>
+      <div><button class="btn ghost" id="fx-add" type="button">新增一項</button></div>
+    </div>
+  </section>
+
+  <div class="stamp">新台幣計價 · 民國年 = 西元年 − 1911</div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="smoney.js"></script>
+<script src="app.js"></script>
