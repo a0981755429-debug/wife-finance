@@ -13,7 +13,7 @@ test('解析證交所收盤價', () => {
 });
 
 test('解析櫃買中心收盤價', () => {
-  const r = parseTpex([{ Date: '1151113', SecuritiesCompanyCode: '6488', CompanyName: '環球晶', Close: '420.50' }, { Date: '1151113', SecuritiesCompanyCode: '6547', Close: '---' }]);
+  const r = parseTpex([{ Date: '1151113', SecuritiesCompanyCode: '6488', CompanyName: '環球晶', Close: '420.50' }, { Date: '1151113', SecuritiesCompanyCode: '6547', Close: '---' }, { Date: '1151113', SecuritiesCompanyCode: '710123', Close: '1.2' }]);
   assert.deepStrictEqual(r, { prices: { 6488: 420.5 }, date: '2026-11-13' });
   assert.strictEqual(rocToIso('115/01/05'), '2026-01-05');
 });

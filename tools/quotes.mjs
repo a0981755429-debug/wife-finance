@@ -10,17 +10,19 @@ async function getJson(url) {
   if (!r.ok) throw new Error(`${url} → HTTP ${r.status}`);
   return r.json();
 }
-const prices = {}; let date = '';
+const prices = {}; const dates = [];
 for (const [name, url, parse] of [
   ['上市', 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL', parseTwse],
   ['上櫃', 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes', parseTpex],
 ]) {
   try {
     const r = parse(await getJson(url));
-    Object.assign(prices, r.prices); if (r.date > date) date = r.date;
+    Object.assign(prices, r.prices); if (r.date) dates.push(r.date);
     console.log(`${name}：${Object.keys(r.prices).length} 檔，日期 ${r.date || '不明'}`);
   } catch (e) { console.error(`${name}抓取失敗：${e.message}`); }
 }
+// 兩邊日期不同（證交所比較晚更新）時用比較舊的那天，免得把昨天的價格當成今天
+const date = dates.sort()[0] || '';
 if (Object.keys(prices).length < 100) { console.error('抓到的資料太少，保留舊的 quotes.json'); process.exit(1); }
 let old = {}; try { old = JSON.parse(readFileSync(OUT, 'utf8')); } catch {}
 if (old.date && date && old.date > date) { console.log('網站上的資料比較新，不更新'); process.exit(0); }

@@ -6,7 +6,7 @@ function parseList(rows, codeKeys, closeKeys) {
   for (const r of Array.isArray(rows) ? rows : []) {
     const code = pick(r, codeKeys).toUpperCase();
     const close = +pick(r, closeKeys).replace(/,/g, '');
-    if (!/^[0-9A-Z]{4,6}$/.test(code) || !(close > 0)) continue;
+    if (!/^(\d{4}|00\d{2,4}[A-Z]?)$/.test(code) || !(close > 0)) continue; // 只留股票和 ETF，不要權證、債券
     prices[code] = close;
     const d = rocToIso(pick(r, ['Date', 'date', '日期'])); if (d > date) date = d;
   }
