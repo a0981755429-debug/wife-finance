@@ -31,7 +31,7 @@ async function decryptVault(v, key) {
 
 /* 資料結構：monthly 是 {年月: 資料}；entries/goals/fixed/holdings 是陣列（每筆有 id）；budget、plan 是物件。 */
 const ARRAY_COLS = ['entries', 'goals', 'fixed', 'holdings', 'accounts', 'liabilities', 'reserves'];
-const SETTING_IDS = ['budget', 'plan', 'funds'];
+const SETTING_IDS = ['budget', 'plan', 'funds', 'flows'];
 function emptyData() { return { schema: 1, monthly: {}, entries: [], budget: {}, plan: {}, goals: [], fixed: [], holdings: [], accounts: [], liabilities: [], reserves: [], funds: {} }; }
 /* 一筆修改 op = {col, id, data}；data 為 null 代表刪除。col 'settings' 的 id 是 budget、plan 或 funds。 */
 function applyOp(d, op) {

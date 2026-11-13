@@ -131,3 +131,6 @@ select.cell{padding:4px 6px}
 .wf-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--rule-2)}
 .wf-total{font-weight:700;font-size:18px;border-bottom:none;border-top:2px solid var(--ink)}
 .wf-total.neg{color:var(--bad)}
+.flow-sel{min-width:6.5em;font-size:13px}
+.flow-sel.mv{color:var(--accent);border-color:var(--accent)}
+.flow-sel.rp{color:var(--warn)}

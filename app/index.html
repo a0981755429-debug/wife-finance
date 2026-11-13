@@ -92,6 +92,10 @@
         <label class="f" for="e-date">日期<input id="e-date" type="date" required></label>
         <label class="f" for="e-cat">類別<select id="e-cat"></select></label>
         <label class="f" for="e-amt">金額（元）<input id="e-amt" type="number" inputmode="numeric" min="1" step="1" required placeholder="例如 350"></label>
+        <label class="f" for="e-flow">性質<select id="e-flow"></select></label>
+        <label class="f" for="e-acct">帳戶<select id="e-acct"></select></label>
+        <label class="f" for="e-acct2" id="e-acct2-wrap" hidden><span id="e-acct2-lab">轉入帳戶</span><select id="e-acct2"></select></label>
+        <label class="small" id="e-link-wrap" hidden style="align-self:end"><input type="checkbox" id="e-link" checked> 同時調整帳戶餘額</label>
         <label class="f" for="e-note" style="grid-column:span 2">備註<input id="e-note" type="text" placeholder="例如 全聯、午餐"></label>
         <button class="btn" type="submit">記下來</button>
       </form>
@@ -311,6 +315,7 @@
 <script src="smoney.js"></script>
 <script src="audit.js"></script>
 <script src="funds.js"></script>
+<script src="flows.js"></script>
 <script src="vault.js"></script>
 <script src="sync.js"></script>
 <script src="app.js"></script>
