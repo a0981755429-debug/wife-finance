@@ -1,9 +1,10 @@
 name: 更新收盤價
 
-# 每個交易日下午 4 點（台灣時間）抓收盤價寫到 app/quotes.json，網頁的現價會自動換成新的。
+# 每個交易日傍晚 6 點和晚上 9 點（台灣時間）抓收盤價（證交所的資料比較晚更新）寫到 app/quotes.json，網頁的現價會自動換成新的。
 on:
   schedule:
-    - cron: '0 8 * * 1-5'
+    - cron: '0 10 * * 1-5'
+    - cron: '0 13 * * 1-5'
   workflow_dispatch:
 
 permissions:
