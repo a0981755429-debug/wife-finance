@@ -19,7 +19,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.7.1';
+const VERSION='2.8.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -167,11 +167,11 @@ const signedN=v=>(v<0?'−':'+')+fmt(Math.abs(v));
 const ymText=ym=>`${roc(+ym.slice(0,4))}年${+ym.slice(5)}月`;
 /* 一個月裡每一筆收支（資金移動不算），給「點數字看明細」用 */
 function itemsOf(ym){const out=[];const m=S.monthly[ym];
-  const push=(rec,c,a,n,d)=>{if(MOVE_FLOWS.has(classify(rec,ovr()).flow))return;out.push({d,t:rec.t,c,a:+a||0,n:n||''})};
+  const push=(rec,c,a,n,d)=>{if(MOVE_FLOWS.has(classify(rec,ovr()).flow))return;out.push({d,t:rec.t,c,a:+a||0,n:n||'',id:rec.eid})};
   if(m){for(const[k,v]of Object.entries(m.income||{}))out.push({d:ym+'-00',t:'i',c:k,a:+v||0,n:'Excel 月總計'});for(const[k,v]of Object.entries(m.expense||{}))out.push({d:ym+'-00',t:'e',c:k,a:+v||0,n:'Excel 月總計'});
     const x=m.extra||{};for(const[k,v]of Object.entries(x.income||{}))push({d:ym+'-00',t:'i',c:k,a:v,n:'extra'},k,v,'補記',ym+'-00');for(const[k,v]of Object.entries(x.expense||{}))push({d:ym+'-00',t:'e',c:k,a:v,n:'extra'},k,v,'補記',ym+'-00');
     for(const r of m.rows||[])push(r,r.c||'其他',r.a,r.n,r.d)}
-  for(const e of S.entries){if(!e.date||e.date.slice(0,7)!==ym)continue;push({d:e.date,t:e.type==='income'?'i':'e',c:e.category,a:e.amount,n:e.note,flow:e.flow},e.category||'其他',e.amount,e.note,e.date)}
+  for(const e of S.entries){if(!e.date||e.date.slice(0,7)!==ym)continue;push({d:e.date,t:e.type==='income'?'i':'e',c:e.category,a:e.amount,n:e.note,flow:e.flow,eid:e.id},e.category||'其他',e.amount,e.note,e.date)}
   return out}
 /* 目前選的期間：要統計的月份 pm、圖表顯示的月份 cm、期間最後一個有資料的月份 endYM */
 function ovMonths(){
@@ -200,8 +200,8 @@ function renderOverview(){
   $('#ov-title').textContent=`民國 ${roc(ovYear)} 年總覽`;
   const{pm,cm,endYM}=ovMonths();const as=pm.map(agg);
   $('#ov-range').textContent=ovPeriod==='month'?`本月 · ${ymText(endYM)}${endYM!==curYM?'（這年最後一個有記錄的月份）':''}`:`${pLabel()} · ${ymText(pm[0])} ～ ${ymText(pm[pm.length-1])}`;
-  const ti=as.reduce((a,b)=>a+b.ti,0),te=as.reduce((a,b)=>a+b.te,0),bal=ti-te;const nM=as.filter(a=>a.has).length;const pl=ovPeriod==='year'?'年':ovPeriod==='six'?'近 6 月':'本月';
-  $('#ov-kpis').innerHTML=kpi(pl+'收入',money(ti),`${nM} 個月有記錄`,'',`data-detail="i" role="button" tabindex="0" aria-label="${pl}收入明細"`)+kpi(pl+'支出',money(te),nM?`平均每月 ${money(te/nM)}`:'','',`data-detail="e" role="button" tabindex="0" aria-label="${pl}支出明細"`)+
+  const ti=as.reduce((a,b)=>a+b.ti,0),te=as.reduce((a,b)=>a+b.te,0),bal=ti-te;const nM=as.filter(a=>a.has).length;const live=pm.includes(curYM),pl=ovPeriod==='year'?(ovYear===today.getFullYear()?'今年累計':'全年'):ovPeriod==='six'?'近 6 月':'本月';const more='<span class="more">查看明細 ›</span>';
+  $('#ov-kpis').innerHTML=kpi(pl+'收入',money(ti),`${nM} 個月有記錄${live?'，含本月累計':''}${more}`,'',`data-detail="i" role="button" tabindex="0" aria-label="${pl}收入明細"`)+kpi(pl+'支出',money(te),(nM?`平均每月 ${money(te/nM)}`:'')+more,'',`data-detail="e" role="button" tabindex="0" aria-label="${pl}支出明細"`)+
     kpi('結餘',(bal<0?'':'+')+money(bal),bal<0?'支出比收入多':'收入大於支出',bal<0?'neg':'pos')+kpi('儲蓄率',ti?Math.round(bal/ti*100)+'%':'—','結餘 ÷ 收入',bal<0?'neg':'');
   // 趨勢圖：每月收支／累計結餘，同一區域切換；點月份在下面固定顯示明細
   const cas=cm.map(agg);const labels=cm.map(k=>rocLabel(k));
@@ -219,16 +219,16 @@ function renderOverview(){
     lineChart(box,labels,cum,i=>cum[i]==null?'':`<b>${ymText(cm[i])}底</b><div class="r"><span>累計結餘</span><span>${money(cum[i])}</span></div>`,'累計結餘折線圖',0,{onPick:pick,H:240})}
   renderPick();
   // 逐月明細：手機四欄（月份、收入、總支出、結餘），其餘點開；桌面七欄
-  const tms=ovPeriod==='year'?pm:pm;let rows='',sI=0,sM=0,sO=0,sT=0,n=0;
+  const tms=pm,anyNote=tms.some(ym=>(S.monthly[ym]||{}).note);const noteTd=(c,t)=>anyNote?c:'';let rows='',sI=0,sM=0,sO=0,sT=0,n=0;
   tms.forEach(ym=>{const a=agg(ym),mon=+ym.slice(5),note=(S.monthly[ym]||{}).note||'';
-    if(!a.has){rows+=`<tr class="ym none"><td>${mon}月</td><td class="num r">—</td><td class="num r x">—</td><td class="num r x">—</td><td class="num r">—</td><td class="num r">—</td><td class="small x"></td></tr>`;return}
+    if(!a.has){rows+=`<tr class="ym none"><td>${mon}月</td><td class="num r">—</td><td class="num r x">—</td><td class="num r x">—</td><td class="num r">—</td><td class="num r">—</td>${anyNote?'<td class="small x"></td>':''}</tr>`;return}
     const b=a.ti-a.te,mort=a.exp['房貸']||0,liv=living(a),op=ovOpen.has(ym);n++;sI+=a.ti;sM+=mort;sO+=liv;sT+=a.te;
-    rows+=`<tr class="ym ${b<0?'negm':''} ${op?'open':''}" data-ym="${ym}" tabindex="0" aria-expanded="${op}"><td>${mon}月 <span class="chev" aria-hidden="true">›</span></td><td class="num r">${fmt(a.ti)}</td><td class="num r x">${fmt(mort)}</td><td class="num r x">${fmt(liv)}</td><td class="num r">${fmt(a.te)}</td><td class="num r bal ${b<0?'neg':'pos'}">${signedN(b)}</td><td class="small muted x note-c" title="${esc(note)}">${esc(note)}</td></tr>`+
+    rows+=`<tr class="ym ${b<0?'negm':''} ${op?'open':''}" data-ym="${ym}" tabindex="0" aria-expanded="${op}" title="點開看該月明細"><td>${mon}月${ym===curYM?' <span class="tag">累計中</span>':''} <span class="chev" aria-hidden="true">›</span></td><td class="num r">${fmt(a.ti)}</td><td class="num r x">${fmt(mort)}</td><td class="num r x">${fmt(liv)}</td><td class="num r">${fmt(a.te)}</td><td class="num r bal ${b<0?'neg':'pos'}">${signedN(b)}</td>${anyNote?`<td class="small muted x note-c" title="${esc(note)}">${esc(note)}</td>`:''}</tr>`+
       `<tr class="tr-detail" ${op?'':'hidden'}><td colspan="7"><div class="dl"><span>房貸</span><b class="num">${fmt(mort)}</b><span>其他支出</span><b class="num">${fmt(liv)}</b></div>${note?`<div class="small" style="margin:6px 0">${esc(note)}</div>`:''}<button class="btn ghost sm" type="button" data-ledger="${ym}">查看當月記帳</button></td></tr>`});
   const avg=v=>n?fmt(v/n):'—';const sb=sI-sT;
-  $('#ov-table').innerHTML=`<table><thead><tr><th>月份</th><th class="r">收入</th><th class="r x">房貸</th><th class="r x" title="房貸以外的支出">其他支出</th><th class="r">總支出</th><th class="r">結餘</th><th class="x">備註</th></tr></thead><tbody>${rows}</tbody>`+
-    (n?`<tfoot><tr><td>合計</td><td class="num r">${fmt(sI)}</td><td class="num r x">${fmt(sM)}</td><td class="num r x">${fmt(sO)}</td><td class="num r">${fmt(sT)}</td><td class="num r bal ${sb<0?'neg':'pos'}">${signedN(sb)}</td><td class="x"></td></tr>
-      <tr><td>月平均<div class="small muted">已記錄 ${n} 個月</div></td><td class="num r">${avg(sI)}</td><td class="num r x">${avg(sM)}</td><td class="num r x">${avg(sO)}</td><td class="num r">${avg(sT)}</td><td class="num r bal ${sb<0?'neg':'pos'}">${n?signedN(Math.round(sb/n)):'—'}</td><td class="x"></td></tr></tfoot>`:'')+`</table>`;
+  $('#ov-table').innerHTML=`<table><thead><tr><th>月份</th><th class="r">收入</th><th class="r x">房貸</th><th class="r x" title="房貸以外的支出">其他支出</th><th class="r">總支出</th><th class="r">結餘</th>${anyNote?'<th class="x">備註</th>':''}</tr></thead><tbody>${rows}</tbody>`+
+    (n?`<tfoot><tr><td>合計</td><td class="num r">${fmt(sI)}</td><td class="num r x">${fmt(sM)}</td><td class="num r x">${fmt(sO)}</td><td class="num r">${fmt(sT)}</td><td class="num r bal ${sb<0?'neg':'pos'}">${signedN(sb)}</td>${anyNote?'<td class="x"></td>':''}</tr>
+      <tr class="avg"><td>月平均<div class="small muted">已記錄 ${n} 個月${tms.includes(curYM)?'，含本月累計':''}</div></td><td class="num r">${avg(sI)}</td><td class="num r x">${avg(sM)}</td><td class="num r x">${avg(sO)}</td><td class="num r">${avg(sT)}</td><td class="num r bal ${sb<0?'neg':'pos'}">${n?signedN(Math.round(sb/n)):'—'}</td>${anyNote?'<td class="x"></td>':''}</tr></tfoot>`:'')+`</table>`;
   // 支出分布
   const cats={};as.forEach(a=>{for(const[k,v]of Object.entries(a.exp))if(ovCat==='in'||k!=='房貸')cats[k]=(cats[k]||0)+v});
   const list=Object.entries(cats).filter(([,v])=>v>0).sort((p,q)=>GRAYCATS.has(p[0])-GRAYCATS.has(q[0])||q[1]-p[1]);
@@ -262,14 +262,45 @@ function renderPick(){const ym=ovSel;if(!ym){$('#ov-pick').innerHTML='';return}c
   const b=a.ti-a.te,top=Object.entries(a.exp).filter(([k])=>k!=='房貸').sort((p,q)=>q[1]-p[1])[0];
   $('#ov-pick').innerHTML=`<div class="pick-h">${ymText(ym)}</div><div class="pick-g"><div><span class="small muted">收入</span><b class="num">${fmt(a.ti)}</b></div><div><span class="small muted">支出</span><b class="num">${fmt(a.te)}</b></div><div><span class="small muted">結餘</span><b class="num ${b<0?'neg':'pos'}">${signedN(b)}</b></div></div>`+
     `<div class="row between" style="margin-top:8px"><span class="small muted">${top?`花最多：${esc(top[0])} ${money(top[1])}`:''}</span><button class="btn ghost sm" type="button" data-ledger="${ym}">查看該月明細</button></div>`}
-/* 點收入、支出數字：看這段期間的類別和最大幾筆 */
-function openDetail(kind){const{pm}=ovMonths();const all=pm.flatMap(itemsOf).filter(x=>x.t===kind);const tot=all.reduce((a,x)=>a+x.a,0);const name=kind==='i'?'收入':'支出';
+/* 點收入、支出數字：分類統計／交易明細兩個分頁，可搜尋、篩選、排序，自己記的帳可直接改類別 */
+const dt={kind:'e',tab:'tx',q:'',cat:'',ym:'',sort:'amt'};
+function dtItems(){const{pm}=ovMonths();return{pm,all:pm.flatMap(ym=>itemsOf(ym).map(x=>({...x,ym}))).filter(x=>x.t===dt.kind)}}
+function openDetail(kind,cat){dt.kind=kind;dt.tab=cat?'tx':'cat';dt.q='';dt.cat=cat||'';dt.ym='';dt.sort='amt';
+  const{pm,all}=dtItems(),name=kind==='i'?'收入':'支出';
+  openSheet(`${pLabel()}${name}明細`,`<div class="small muted" id="dt-sum"></div>
+    <span class="seg gen" id="dt-tabs"><button type="button" data-dtab="cat">分類統計</button><button type="button" data-dtab="tx">交易明細</button></span>
+    <div id="dt-cat"></div>
+    <div id="dt-tx"><div class="dt-f"><input id="dt-q" type="search" placeholder="搜尋備註、類別" aria-label="搜尋">
+      <select id="dt-c" aria-label="類別"></select>${pm.length>1?'<select id="dt-m" aria-label="月份"></select>':''}
+      <select id="dt-s" aria-label="排序"><option value="amt">金額大到小</option><option value="date">日期新到舊</option></select></div>
+      <div class="tbl-wrap" id="dt-list"></div><p class="small muted" id="dt-more"></p></div>`,{full:true});
+  const cats=[...new Set(all.map(x=>x.c))].sort(),sel=$('#dt-c');
+  sel.innerHTML='<option value="">全部類別</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');sel.value=dt.cat;
+  const m=$('#dt-m');if(m)m.innerHTML='<option value="">全部月份</option>'+pm.map(k=>`<option value="${k}">${ymText(k)}</option>`).join('');
+  renderDetail()}
+const dtCatOpts=(kind,cur)=>(kind==='i'?INC_CATS:EXP_CATS).map(c=>`<option ${c===cur?'selected':''}>${c}</option>`).join('')+((kind==='i'?INC_CATS:EXP_CATS).includes(cur)?'':`<option selected>${esc(cur)}</option>`);
+function renderDetail(){const{pm,all}=dtItems();const tot=all.reduce((a,x)=>a+x.a,0);
+  $('#dt-sum').textContent=`${ymText(pm[0])}${pm.length>1?` ～ ${ymText(pm[pm.length-1])}`:''}，共 ${all.length} 筆、${money(tot)}。資金移動（轉帳、投資買賣、借入）沒有算進來。`;
+  document.querySelectorAll('#dt-tabs button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.dtab===dt.tab));
+  $('#dt-cat').hidden=dt.tab!=='cat';$('#dt-tx').hidden=dt.tab!=='tx';
   const by={};all.forEach(x=>by[x.c]=(by[x.c]||0)+x.a);const cl=Object.entries(by).sort((p,q)=>q[1]-p[1]);const mx=Math.max(1,...cl.map(x=>x[1]));
-  const top=[...all].sort((p,q)=>q.a-p.a).slice(0,30);
-  openSheet(`${pLabel()}${name}明細`,`<div class="small muted">${ymText(pm[0])}${pm.length>1?` ～ ${ymText(pm[pm.length-1])}`:''}，共 ${all.length} 筆、${money(tot)}。資金移動（轉帳、投資買賣、借入）沒有算進來。</div>
-    <div class="bars">${cl.map(([k,v])=>`<div class="bar-row"><span>${esc(k)}</span><div class="bar-track"><div class="bar-fill ${kind==='i'?'inc':''}" style="width:${v/mx*100}%"></div></div><span class="v">${fmt(v)}</span></div>`).join('')}</div>
-    <h3>最大的 ${top.length} 筆</h3><div class="tbl-wrap"><table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th class="r">金額</th></tr></thead><tbody>${top.map(x=>`<tr><td class="num small">${esc(x.d.endsWith('-00')?x.d.slice(5,7)+'月':x.d.slice(5).replace('-','/'))}</td><td>${esc(x.c)}</td><td class="small muted">${esc(x.n)}</td><td class="num r">${fmt(x.a)}</td></tr>`).join('')}</tbody></table></div>
-    <button class="btn" type="button" data-ledger="${pm[pm.length-1]}">到記帳看 ${+pm[pm.length-1].slice(5)} 月</button>`,{full:true})}
+  $('#dt-cat').innerHTML=`<div class="bars">${cl.map(([k,v])=>`<button type="button" class="bar-row bar-btn" data-dcat="${esc(k)}"><span>${esc(k)}</span><div class="bar-track"><div class="bar-fill ${dt.kind==='i'?'inc':''}" style="width:${v/mx*100}%"></div></div><span class="v">${fmt(v)} <span class="muted">›</span></span></button>`).join('')}</div><p class="small muted">點分類可直接看那一類的交易。</p>`;
+  renderDetailList()}
+function renderDetailList(){const{all}=dtItems();const q=dt.q.trim().toLowerCase();
+  let r=all.filter(x=>(!dt.cat||x.c===dt.cat)&&(!dt.ym||x.ym===dt.ym)&&(!q||(x.c+' '+x.n).toLowerCase().includes(q)));
+  r.sort(dt.sort==='date'?(p,q2)=>q2.d.localeCompare(p.d)||q2.a-p.a:(p,q2)=>q2.a-p.a);
+  const tot=r.reduce((a,x)=>a+x.a,0),CAP=200,shown=r.slice(0,CAP);
+  $('#dt-list').innerHTML=r.length?`<table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th class="r">金額</th></tr></thead><tbody>${shown.map(x=>`<tr><td class="num small">${esc(x.d.endsWith('-00')?x.d.slice(5,7)+'月':x.d.slice(5).replace('-','/'))}</td><td>${x.id?`<select class="cell" data-recat="${esc(x.id)}" aria-label="修改類別">${dtCatOpts(dt.kind,x.c)}</select>`:esc(x.c)}</td><td class="small muted">${esc(x.n)}</td><td class="num r">${fmt(x.a)}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">沒有符合的交易</div>';
+  $('#dt-more').textContent=r.length?`符合 ${r.length} 筆、${money(tot)}${r.length>CAP?`，只列出前 ${CAP} 筆，請用搜尋或篩選縮小範圍`:''}。自己記的帳可直接改類別；匯入的帳到記帳頁調整性質。`:'';
+  const last=dt.ym||dtItems().pm.slice(-1)[0];$('#dt-ledger')&&$('#dt-ledger').remove();
+  $('#dt-more').insertAdjacentHTML('afterend',`<button class="btn ghost sm" id="dt-ledger" type="button" data-ledger="${last}">到記帳看 ${+last.slice(5)} 月</button>`)}
+$('#sheet-body').addEventListener('click',e=>{let b;
+  if(b=e.target.closest('[data-dtab]')){dt.tab=b.dataset.dtab;renderDetail()}
+  else if(b=e.target.closest('[data-dcat]')){dt.cat=b.dataset.dcat;dt.tab='tx';$('#dt-c').value=dt.cat;renderDetail()}});
+$('#sheet-body').addEventListener('input',e=>{if(e.target.id==='dt-q'){dt.q=e.target.value;renderDetailList()}});
+$('#sheet-body').addEventListener('change',e=>{const t=e.target;
+  if(t.id==='dt-c'){dt.cat=t.value;renderDetailList()}else if(t.id==='dt-m'){dt.ym=t.value;renderDetailList()}else if(t.id==='dt-s'){dt.sort=t.value;renderDetailList()}
+  else if(t.dataset.recat){const r=curRec('entries',t.dataset.recat);if(!r)return;put('entries',t.dataset.recat,{...r,category:t.value});toast(`已改成「${t.value}」`);if($('#dt-list'))renderDetail()}});
 function goLedger(ym){$('#lg-month').value=ym;scrollAt.ledger=0;showTab('ledger');$('#lg-back').hidden=false}
 $('#lg-back').addEventListener('click',()=>showTab('overview'));
 $('#sheet-body').addEventListener('click',e=>{const b=e.target.closest('[data-ledger]');if(b)goLedger(b.dataset.ledger)});
@@ -281,7 +312,7 @@ $('#v-overview').addEventListener('click',e=>{const t=e.target;let b;
   else if(t.closest('#ov-catall')){ovCatAll=!ovCatAll;renderOverview()}
   else if(b=t.closest('[data-ledger]'))goLedger(b.dataset.ledger);
   else if(b=t.closest('[data-detail]'))openDetail(b.dataset.detail);
-  else if(b=t.closest('tr.ym[data-ym]')){const ym=b.dataset.ym;ovOpen.has(ym)?ovOpen.delete(ym):ovOpen.add(ym);b.classList.toggle('open',ovOpen.has(ym));b.setAttribute('aria-expanded',ovOpen.has(ym));b.nextElementSibling.hidden=!ovOpen.has(ym)}
+  else if(b=t.closest('tr.ym[data-ym]')){const ym=b.dataset.ym;if(matchMedia('(min-width:641px)').matches){goLedger(ym);return}ovOpen.has(ym)?ovOpen.delete(ym):ovOpen.add(ym);b.classList.toggle('open',ovOpen.has(ym));b.setAttribute('aria-expanded',ovOpen.has(ym));b.nextElementSibling.hidden=!ovOpen.has(ym)}
   else if(b=t.closest('.note-c'))b.classList.toggle('open')});
 $('#v-overview').addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const b=e.target.closest('.kpi[data-detail],tr.ym[data-ym]');if(b){e.preventDefault();b.click()}});
 let lastW=innerWidth,rsT=null;window.addEventListener('resize',()=>{if(innerWidth===lastW)return;lastW=innerWidth;clearTimeout(rsT);rsT=setTimeout(()=>{if(S.ready)renderAll()},200)});
