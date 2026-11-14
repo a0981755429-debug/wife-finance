@@ -19,7 +19,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.7.0';
+const VERSION='2.7.1';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -607,14 +607,14 @@ const fundsNow=()=>computeFunds({accounts:S.accounts,liabilities:S.liabilities,r
 function renderFunds(){
   const st=recentStats();const F=fundsNow();renderGrowth(F,st);
   const has=S.accounts.length>0;
-  $('#fd-kpis').innerHTML=kpi('現金與存款',has?money(F.cash):'未登錄',F.locked?`活存＋現金 ${money(F.liquid)}，定存等 ${money(F.locked)}`:'個人銀行及現金')
+  $('#fd-kpis').innerHTML=kpi('現金與存款',has?money(F.cash):'未登錄',F.locked?`活存＋現金 ${money(F.liquid)}，定存 ${money(F.locked)}`:'個人銀行及現金')
     +kpi('可運用現金',has?money(F.available):'—',has?(F.available<0?'不夠扣預留和底線':'扣除預留及安全底線'):'先登錄帳戶',F.available<0?'neg':'pos')
     +kpi('用途預留金',money(F.reserved),`${S.reserves.length} 項`)
-    +kpi('已知個人淨資產',has||S.holdings.length?money(F.net):'—',`含投資 ${money(F.invest)}，扣負債 ${money(F.debt)}${F.debtFixed?'（房屋價值沒算，可用「其他」帳戶登錄）':''}`,F.net<0?'neg':'');
+    +kpi('已知個人淨資產',has||S.holdings.length?money(F.net):'—',`含投資 ${money(F.invest)}${F.other?`、其他資產 ${money(F.other)}`:''}，扣負債 ${money(F.debt)}${F.debtFixed&&!F.other?'（房屋價值沒算，可用「其他」帳戶登錄）':''}`,F.net<0?'neg':'');
   const step=(lab,v,sign,note)=>`<div class="wf-row"><span>${lab}${note?`<span class="small muted">　${note}</span>`:''}</span><span class="num">${sign}${fmt(v)}</span></div>`;
   $('#fd-flow').innerHTML=has?step('活存＋現金',F.liquid,'')+step('用途預留金',F.reserved,'− ')+step('安全現金底線',F.floor,'− ',F.floor?'':'還沒設定')
     +`<div class="wf-row wf-total ${F.available<0?'neg':''}"><span>試算可運用現金</span><span class="num">${F.available<0?'−':''}${fmt(Math.abs(F.available))}</span></div>`
-    +`<p class="small muted" style="margin:0">${F.locked?`定存等不能隨時動用的 ${money(F.locked)} 沒有算進來。`:''}還沒扣除其他沒登錄的未來支出。</p>`
+    +`<p class="small muted" style="margin:0">${F.locked+F.other?`定存、房屋等不能隨時動用的 ${money(F.locked+F.other)} 沒有算進來。`:''}還沒扣除其他沒登錄的未來支出。</p>`
     :'<div class="empty">先在下面登錄帳戶餘額，就會算出可運用現金。</div>';
   const floorEl=$('#fd-floor');if(document.activeElement!==floorEl)floorEl.value=S.funds.floor??'';
   floorEl.placeholder=st.liv?`例如 ${fmt(Math.round(st.liv*3/1000)*1000)}（約 3 個月生活費）`:'例如 60000';
@@ -660,7 +660,7 @@ function renderGrowth(F,st){
   $('#gr-kpis').innerHTML=kpi('本月淨資產',money(G.now.net),'即時，含持股市值',G.now.net<0?'neg':'')+diff(G.prev,'比上個月')+diff(G.year||G.first,G.year?'比一年前':'比最早一筆')
     +kpi('緊急預備金',P.months==null?'—':P.months.toFixed(1)+' 個月',spend?`每月支出約 ${money(spend)}`:'還沒有支出資料',P.months!=null&&P.months<3?'neg':'');
   lineChart($('#gr-chart'),series.map(p=>ymShort(p.ym)),series.map(p=>p.net),i=>{const p=series[i];if(p.net==null)return`<b>${ymLong(p.ym)}</b><div class="small">那個月沒有記到</div>`;
-    return`<b>${ymLong(p.ym)}${p.est?'（估算）':p.ym===curYM?'（即時）':''}</b><div class="r"><span>淨資產</span><span>${money(p.net)}</span></div>${p.est?'':`<div class="r"><span>現金存款</span><span>${money(p.cash)}</span></div><div class="r"><span>投資</span><span>${money(p.invest)}</span></div><div class="r"><span>負債</span><span>−${fmt(p.debt)}</span></div>`}`},'每月淨資產走勢',estN);
+    return`<b>${ymLong(p.ym)}${p.est?'（估算）':p.ym===curYM?'（即時）':''}</b><div class="r"><span>淨資產</span><span>${money(p.net)}</span></div>${p.est?'':`<div class="r"><span>現金存款</span><span>${money(p.cash)}</span></div><div class="r"><span>投資</span><span>${money(p.invest)}</span></div>${p.other?`<div class="r"><span>其他資產</span><span>${money(p.other)}</span></div>`:''}<div class="r"><span>負債</span><span>−${fmt(p.debt)}</span></div>`}`},'每月淨資產走勢',estN);
   $('#gr-note').textContent=(estN?`虛線是用每月收支結餘往回推的估算（沒算股價漲跌，房貸還款當作都是本金），只是參考。`:'')+(Sync.hasToken()?'每個月會自動記下一筆，本月的數字會更新到月底。':'這台裝置沒設 GitHub 金鑰，不會存下每月紀錄，只顯示即時數字。');
   const row=(lab,v,cls='',note='')=>`<div class="wf-row ${cls}"><span>${lab}${note?`<span class="small muted">　${note}</span>`:''}</span><span class="num">${v}</span></div>`;
   const tips=[];

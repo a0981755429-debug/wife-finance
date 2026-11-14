@@ -5,7 +5,7 @@ const { emptyData, applyOp } = require('../app/vault.js');
 
 test('快照只記整數，數字沒變就不重存', () => {
   const s = snapshotOf({ cash: 300000.4, liquid: 200000, invest: 259236.7, debt: 1430625, net: -871388.3 }, '2026-11');
-  assert.deepStrictEqual(s, { ym: '2026-11', cash: 300000, liquid: 200000, invest: 259237, debt: 1430625, net: -871388 });
+  assert.deepStrictEqual(s, { ym: '2026-11', cash: 300000, liquid: 200000, invest: 259237, other: 0, debt: 1430625, net: -871388 });
   assert.strictEqual(snapChanged(null, s), true);
   assert.strictEqual(snapChanged({ ...s, at: 'x' }, s), false);
   assert.strictEqual(snapChanged({ ...s, net: 1 }, s), true);

@@ -15,12 +15,13 @@ function accruedReserve(f, today) {
 
 function computeFunds({ accounts = [], liabilities = [], reserves = [], funds = {}, fixed = [], holdingsValue = 0 }, today = new Date()) {
   const warnings = []; const warn = (level, msg) => warnings.push({ level, msg });
-  let liquid = 0, locked = 0;
+  let liquid = 0, locked = 0, other = 0; // other：房屋等「其他」資產，算淨資產，不算現金
   const seen = new Map();
   for (const a of accounts) {
     const name = (a.name || '').trim() || '（沒有名稱）';
     if (!okNum(a.balance)) { warn('error', `帳戶「${name}」餘額「${a.balance}」不正確`); continue; }
-    if (LIQUID_KINDS.has(a.kind || '活存')) liquid += a.balance; else locked += a.balance;
+    const kind = a.kind || '活存';
+    if (LIQUID_KINDS.has(kind)) liquid += a.balance; else if (kind === '其他') other += a.balance; else locked += a.balance;
     const key = name + '|' + (a.kind || '');
     if (seen.has(key)) warn('warn', `帳戶「${name}」出現兩次，可能重複計算`); else seen.set(key, 1);
     if (a.updatedAt) {
@@ -43,8 +44,8 @@ function computeFunds({ accounts = [], liabilities = [], reserves = [], funds = 
   const available = liquid - reserved - floor;
   if (reserved > liquid) warn('warn', `用途預留 ${reserved.toLocaleString('zh-TW')} 比活存加現金 ${liquid.toLocaleString('zh-TW')} 還多，有些預留的錢其實不在帳上`);
   if (accounts.length && available < 0) warn('warn', `扣掉預留和安全底線後差 ${(-available).toLocaleString('zh-TW')}，目前沒有可以自由運用的現金`);
-  const assets = liquid + locked + (+holdingsValue || 0), debt = debtOwn + debtFixed;
-  return { liquid, locked, cash: liquid + locked, reserved, floor, available, invest: +holdingsValue || 0, debtOwn, debtFixed, loans, debt, assets, net: assets - debt, gap: Math.max(0, -available), warnings };
+  const assets = liquid + locked + other + (+holdingsValue || 0), debt = debtOwn + debtFixed;
+  return { liquid, locked, other, cash: liquid + locked, reserved, floor, available, invest: +holdingsValue || 0, debtOwn, debtFixed, loans, debt, assets, net: assets - debt, gap: Math.max(0, -available), warnings };
 }
 
 /* 從年繳固定支出產生預留項目（已經有同名的就跳過） */

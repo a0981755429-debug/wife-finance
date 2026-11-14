@@ -56,3 +56,10 @@ test('從年繳固定支出帶入預留：按月提撥估算，已有的不重�
   const r = reservesFromFixed(fixed, [{ name: '牌照稅', amount: 100 }], today);
   assert.deepStrictEqual(r.map(x => [x.name, x.amount, x.due]), [['保險', 14506, '2027-06']]);
 });
+
+test('「其他」帳戶（例如房屋）算淨資產，不算現金與存款', () => {
+  const F = computeFunds({ accounts: [{ name: '活存', kind: '活存', balance: 100000 }, { name: '房屋', kind: '其他', balance: 4500000 }, { name: '定存', kind: '定存', balance: 50000 }], fixed: [{ id: 'm', name: '房貸', kind: '貸款', balance: 1430000 }] }, today);
+  assert.deepStrictEqual([F.liquid, F.locked, F.other, F.cash], [100000, 50000, 4500000, 150000]);
+  assert.strictEqual(F.net, 100000 + 50000 + 4500000 - 1430000);
+  assert.strictEqual(F.available, 100000);
+});
