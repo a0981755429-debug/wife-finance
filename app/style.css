@@ -249,3 +249,7 @@ body.noscroll{overflow:hidden}
 #dt-sum{display:flex;flex-direction:column;gap:2px}
 .dt-f input,.dt-f select{min-width:0;width:100%}
 select.cell{max-width:9em}
+
+@keyframes hl{0%,60%{background:var(--tint);box-shadow:inset 3px 0 0 var(--accent)}100%{background:transparent;box-shadow:inset 3px 0 0 transparent}}
+tr.hl td{animation:hl 2.6s ease-out}
+@media (prefers-reduced-motion:reduce){tr.hl td{animation:none;background:var(--tint)}}
