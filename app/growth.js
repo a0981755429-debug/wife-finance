@@ -5,9 +5,9 @@ const EMERGENCY_MONTHS = 6; // 沒設安全底線時，緊急預備金的目標�
 /* computeFunds 的結果 → 一個月的快照（id 用年月，一個月只留一筆，本月會一直更新到月底） */
 function snapshotOf(F, ym) {
   const r = Math.round;
-  return { ym, cash: r(F.cash), liquid: r(F.liquid), invest: r(F.invest), debt: r(F.debt), net: r(F.net) };
+  return { ym, cash: r(F.cash), liquid: r(F.liquid), invest: r(F.invest), other: r(F.other || 0), debt: r(F.debt), net: r(F.net) };
 }
-const SNAP_KEYS = ['cash', 'liquid', 'invest', 'debt', 'net'];
+const SNAP_KEYS = ['cash', 'liquid', 'invest', 'other', 'debt', 'net'];
 const snapChanged = (old, nu) => !old || SNAP_KEYS.some(k => Math.round(+old[k] || 0) !== nu[k]);
 
 const ymShift = (ym, k) => { let [y, m] = ym.split('-').map(Number); m += k; y += Math.floor((m - 1) / 12); m = ((m - 1) % 12 + 12) % 12 + 1; return `${y}-${String(m).padStart(2, '0')}`; };
@@ -27,7 +27,7 @@ function netSeries(snapshots, surplus, curYM, back = 12) {
   }
   const bySnap = new Map(snaps.map(s => [s.ym, s]));
   for (let ym = first.ym; ym <= curYM; ym = ymShift(ym, 1)) {
-    const s = bySnap.get(ym); if (s) out.push({ ym, net: +s.net || 0, cash: s.cash, invest: s.invest, debt: s.debt, est: false });
+    const s = bySnap.get(ym); if (s) out.push({ ym, net: +s.net || 0, cash: s.cash, invest: s.invest, other: s.other, debt: s.debt, est: false });
     else out.push({ ym, net: null, est: false }); // 那個月沒有打開過，留空
   }
   return out;
