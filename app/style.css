@@ -89,7 +89,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .insights li strong{font-weight:700}
 .tbl-wrap{overflow-x:auto;min-width:0}
 table{border-collapse:collapse;width:100%;font-size:14px}
-th{font-weight:500;color:var(--ink-3);font-size:12px;letter-spacing:.04em;text-align:left;border-bottom:1px solid var(--rule-2);padding:6px 8px;white-space:nowrap}
+th{font-weight:500;color:var(--ink-3);font-size:13px;letter-spacing:.04em;text-align:left;border-bottom:1px solid var(--rule-2);padding:6px 8px;white-space:nowrap}
 td{border-bottom:1px solid var(--rule);padding:7px 8px;vertical-align:middle}
 td.r,th.r{text-align:right}
 td.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
@@ -201,3 +201,37 @@ body.noscroll{overflow:hidden}
   #bnav button[aria-selected="true"]{color:var(--accent);background:var(--accent-soft);font-weight:700}
   .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 }
+
+/* 總覽：期間切換、逐月表格、圖表下方明細 */
+.seg.gen button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.kpi[data-detail]{cursor:pointer}
+.kpi[data-detail]:hover{background:var(--tint)}
+.kpi .val{font-size:clamp(20px,6vw,26px)}
+.chart .hl.sel{fill:var(--accent);opacity:.12}
+.chart .hit{cursor:pointer}
+.pick{border-top:1px solid var(--rule);padding-top:12px}
+.pick-h{font-family:var(--f-display);font-size:17px;font-weight:700;margin-bottom:6px}
+.pick-g{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pick-g div{display:flex;flex-direction:column}.pick-g b{font-size:18px;font-weight:600}
+.ov-tbl{max-height:70vh;overflow:auto}
+.ov-tbl table{font-size:15px}
+.ov-tbl th{position:sticky;top:0;background:var(--sheet);z-index:2}
+.ov-tbl th:first-child,.ov-tbl td:first-child{position:sticky;left:0;background:var(--sheet);z-index:1}
+.ov-tbl th:first-child{z-index:3}
+.ov-tbl tr.ym td{height:48px}
+.ov-tbl tr.ym{cursor:pointer}
+.ov-tbl tr.negm td{background:var(--bad-soft)}
+.ov-tbl tr.none td{color:var(--ink-3)}
+.ov-tbl td.bal{font-weight:700}
+.ov-tbl tfoot td{font-weight:600;border-top:2px solid var(--rule-2);background:var(--tint)}
+.ov-tbl tfoot td:first-child{background:var(--tint)}
+.ov-tbl .chev{display:none;color:var(--ink-3);display:inline-block;transition:transform .15s}
+.ov-tbl tr.open .chev{transform:rotate(90deg)}
+.ov-tbl td.note-c{max-width:14em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.ov-tbl td.note-c.open{white-space:normal;max-width:none}
+.ov-tbl .tr-detail td{background:var(--tint);padding:10px 12px}
+.ov-tbl .tr-detail .dl{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 12px;align-items:baseline}
+.lnk{font:inherit;font-size:13px;border:none;background:none;color:var(--accent);text-decoration:underline;cursor:pointer;padding:4px 2px;min-height:32px}
+.bar-fill.inc{background:var(--inc)}
+@media (min-width:641px){.ov-tbl .tr-detail{display:none}.ov-tbl .chev{display:none}}
+@media (max-width:640px){.ov-tbl .x{display:none}.ov-tbl{max-height:none}.ov-tbl td:first-child{white-space:nowrap}.ov-tbl .chev{display:inline-block}.ov-tbl table{font-size:14px}.ov-tbl th,.ov-tbl td{padding-left:4px;padding-right:4px}.ov-tbl th{font-size:12.5px}}
