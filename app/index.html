@@ -50,39 +50,42 @@
   <div id="banner" class="banner" hidden></div>
 
   <!-- 總覽 -->
-  <section id="v-overview" data-view="overview" class="wrap" style="gap:20px">
+  <section id="v-overview" data-view="overview" class="wrap" style="gap:16px">
     <div class="row between">
-      <h2 id="ov-title">年度總覽</h2>
+      <div><h2 id="ov-title">年度總覽</h2><div class="small muted" id="ov-range"></div></div>
       <div class="chips" id="ov-years"></div>
     </div>
+    <span class="seg gen" id="ov-period" style="align-self:flex-start"><button type="button" data-p="year" aria-pressed="true">全年</button><button type="button" data-p="six" aria-pressed="false">近 6 月</button><button type="button" data-p="month" aria-pressed="false">本月</button></span>
     <div class="kpis" id="ov-kpis"></div>
     <div class="sheet">
       <div class="row between">
-        <h3>每月收入與支出</h3>
-        <div class="legend"><span><i style="background:var(--inc)"></i>收入</span><span><i style="background:var(--exp)"></i>支出</span></div>
+        <span class="seg gen" id="ov-view"><button type="button" data-w="flow" aria-pressed="true">每月收支</button><button type="button" data-w="cum" aria-pressed="false">累計結餘</button></span>
+        <div class="legend" id="ov-legend"><span><i style="background:var(--inc)"></i>收入</span><span><i style="background:var(--exp)"></i>支出</span></div>
       </div>
       <div class="chart" id="ov-chart"></div>
-      <div class="row between"><h3>累計結餘</h3><span class="small muted">從當年 1 月開始累加</span></div>
-      <div class="chart" id="ov-cum"></div>
+      <p class="small muted" id="ov-cumnote" style="margin:0" hidden></p>
+      <div class="pick" id="ov-pick"></div>
+    </div>
+    <div class="sheet">
+      <div class="row between"><h3>逐月明細</h3><span class="small muted">單位：元　點月份看細項</span></div>
+      <div class="tbl-wrap ov-tbl" id="ov-table"></div>
     </div>
     <div class="grid2">
       <div class="sheet">
-        <div class="row between"><h3>錢花去哪裡</h3><span class="small muted">不含房貸</span></div>
+        <div class="row between"><h3>錢花去哪裡</h3><span class="seg gen" id="ov-catmode"><button type="button" data-cm="ex" aria-pressed="true">不含房貸</button><button type="button" data-cm="in" aria-pressed="false">含房貸</button></span></div>
         <div class="bars" id="ov-cats"></div>
+        <button class="btn ghost sm" id="ov-catall" type="button" style="align-self:flex-start" hidden></button>
       </div>
       <div class="sheet">
-        <h3>觀察</h3>
+        <h3>重點提醒</h3>
         <ul class="insights" id="ov-ins"></ul>
       </div>
-    </div>
-    <div class="sheet">
-      <h3>逐月明細</h3>
-      <div class="tbl-wrap" id="ov-table"></div>
     </div>
   </section>
 
   <!-- 記帳 -->
   <section id="v-ledger" data-view="ledger" class="wrap" style="gap:20px" hidden>
+    <div><button class="btn ghost sm" id="lg-back" type="button" hidden>‹ 回總覽</button></div>
     <div class="sheet">
       <h2>記一筆</h2>
       <form id="entry-form" class="form" autocomplete="off">

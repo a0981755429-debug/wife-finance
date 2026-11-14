@@ -19,7 +19,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.6.0';
+const VERSION='2.7.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -101,29 +101,35 @@ function guarded(el,html){ // don't redraw a block while someone is typing in it
   el.innerHTML=html;el.dataset.stale='';return true;
 }
 document.addEventListener('focusout',e=>{setTimeout(()=>{if(document.querySelector('[data-stale="1"]')&&!(document.activeElement&&/INPUT|SELECT/.test(document.activeElement.tagName)&&document.activeElement.closest('[data-stale="1"]')))renderAll()},0)});
-const kpi=(lab,val,note,cls='')=>`<div class="kpi"><span class="lab">${lab}</span><span class="val ${cls}">${val}</span>${note?`<span class="note">${note}</span>`:''}</div>`;
+const kpi=(lab,val,note,cls='',attrs='')=>`<div class="kpi" ${attrs}><span class="lab">${lab}</span><span class="val ${cls}">${val}</span>${note?`<span class="note">${note}</span>`:''}</div>`;
 const loading=()=>!S.ready;
 
 function niceMax(v){if(v<=0)return 1;const p=Math.pow(10,Math.floor(Math.log10(v)));const f=v/p;return(f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p}
 const kfmt=v=>Math.abs(v)>=10000?(v/10000).toFixed(Math.abs(v)%10000?1:0)+'萬':fmt(v);
 
-function attachTip(box,svg,getHtml){
+function markSel(box,svg){svg.querySelectorAll('.hl').forEach(x=>{x.style.display='none';x.classList.remove('sel')});const k=box.dataset.sel;
+  if(k!==undefined&&k!==''){const h=svg.querySelector(`.hl[data-h="${k}"]`);if(h){h.style.display='';h.classList.add('sel')}}}
+function attachTip(box,svg,getHtml,onPick){
+  const touch=matchMedia('(pointer:coarse)').matches; // 手機沒有滑鼠移過，不顯示浮動提示，改看圖表下方的固定明細
   let tip=box.querySelector('.tip');if(!tip){tip=document.createElement('div');tip.className='tip';tip.hidden=true;box.appendChild(tip)}
   svg.querySelectorAll('[data-i]').forEach(r=>{
-    const show=ev=>{const i=+r.dataset.i;const h=getHtml(i);if(!h){tip.hidden=true;return}
-      svg.querySelectorAll('.hl').forEach(x=>x.style.display='none');const hl=svg.querySelector(`.hl[data-h="${i}"]`);if(hl)hl.style.display='';
+    const show=()=>{const i=+r.dataset.i;const h=getHtml(i);svg.querySelectorAll('.hl').forEach(x=>x.style.display='none');const hl=svg.querySelector(`.hl[data-h="${i}"]`);if(hl)hl.style.display='';
+      if(!h||touch){tip.hidden=true;return}
       tip.innerHTML=h;tip.hidden=false;const bb=box.getBoundingClientRect();const rb=r.getBoundingClientRect();
       let x=rb.left-bb.left+rb.width/2-tip.offsetWidth/2;x=Math.max(0,Math.min(bb.width-tip.offsetWidth,x));
       tip.style.left=x+'px';tip.style.top='4px';};
-    r.addEventListener('mouseenter',show);r.addEventListener('click',show);r.addEventListener('focus',show);
-    r.addEventListener('mouseleave',()=>{tip.hidden=true;svg.querySelectorAll('.hl').forEach(x=>x.style.display='none')});
+    const pick=()=>{if(onPick){box.dataset.sel=r.dataset.i;onPick(+r.dataset.i);markSel(box,svg)}};
+    r.addEventListener('mouseenter',show);r.addEventListener('focus',show);r.addEventListener('click',()=>{show();pick()});
+    r.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick()}});
+    r.addEventListener('mouseleave',()=>{tip.hidden=true;markSel(box,svg)});
   });
+  markSel(box,svg);
 }
 
-function barChart(box,labels,inc,exp,tipFn){
-  const W=720,H=240,L=46,R=8,T=12,B=26;const n=labels.length;
+function barChart(box,labels,inc,exp,tipFn,onPick){
+  const W=Math.max(280,box.clientWidth||720),H=240,L=46,R=8,T=12,B=26;const n=labels.length;
   const mx=niceMax(Math.max(1,...inc,...exp));const y=v=>T+(H-T-B)*(1-v/mx);
-  const slot=(W-L-R)/n;const bw=Math.max(4,Math.min(18,(slot-10)/2));
+  const slot=(W-L-R)/n;const bw=Math.max(4,Math.min(18,(slot-10)/2));const step=slot<30?2:1;
   let g='';for(let k=0;k<=4;k++){const v=mx*k/4;g+=`<line class="${k?'grid':'zero'}" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${kfmt(v)}</text>`}
   let bars='';
   labels.forEach((lb,i)=>{const cx=L+slot*i+slot/2;
@@ -131,86 +137,154 @@ function barChart(box,labels,inc,exp,tipFn){
     const bar=(v,x,cls)=>{if(!v)return'';const top=y(v),h=y(0)-top;const r=Math.min(4,h,bw/2);
       return`<path class="${cls}" d="M${x},${y(0)}V${top+r}Q${x},${top} ${x+r},${top}H${x+bw-r}Q${x+bw},${top} ${x+bw},${top+r}V${y(0)}Z"/>`};
     bars+=bar(inc[i],cx-bw-1,'b-inc')+bar(exp[i],cx+1,'b-exp');
-    bars+=`<text x="${cx}" y="${H-8}" text-anchor="middle">${esc(lb)}</text>`;
-    bars+=`<rect class="hit" data-i="${i}" tabindex="0" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T}"/>`;
+    if(i%step===0)bars+=`<text x="${cx}" y="${H-8}" text-anchor="middle">${esc(lb)}</text>`;
+    bars+=`<rect class="hit" data-i="${i}" tabindex="0" role="button" aria-label="${esc(lb)}" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T}"/>`;
   });
   box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="每月收入與支出長條圖">${g}${bars}</svg>`;
-  attachTip(box,box.querySelector('svg'),tipFn);
+  attachTip(box,box.querySelector('svg'),tipFn,onPick);
 }
-function lineChart(box,labels,vals,tipFn,aria,estN=0){ // estN：前幾個點是估算，畫虛線
-  const W=720,H=170,L=46,R=12,T=14,B=26;const n=labels.length;
+function lineChart(box,labels,vals,tipFn,aria,estN=0,opts={}){ // estN：前幾個點是估算，畫虛線
+  const W=Math.max(280,box.clientWidth||720),H=opts.H||170,L=46,R=12,T=14,B=26;const n=labels.length;
   const pts=vals.map((v,i)=>v==null?null:[i,v]).filter(Boolean);
   if(!pts.length){box.innerHTML='<div class="empty">還沒有資料</div>';return}
   let mn=Math.min(0,...pts.map(p=>p[1])),mx=Math.max(0,...pts.map(p=>p[1]));
   const span=niceMax(Math.max(mx-mn,1));const step=span/4;mn=Math.floor(mn/step)*step;mx=Math.ceil(mx/step)*step;if(mx===mn)mx=mn+step;
-  const slot=(W-L-R)/n;const x=i=>L+slot*i+slot/2;const y=v=>T+(H-T-B)*(1-(v-mn)/(mx-mn));
+  const slot=(W-L-R)/n;const lstep=slot<30?2:1;const x=i=>L+slot*i+slot/2;const y=v=>T+(H-T-B)*(1-(v-mn)/(mx-mn));
   let g='';for(let v=mn;v<=mx+1e-6;v+=step){g+=`<line class="${Math.abs(v)<1e-6?'zero':'grid'}" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${kfmt(v)}</text>`}
   const path=ps=>ps.map((p,k)=>(k?'L':'M')+x(p[0])+','+y(p[1])).join('');const d=path(pts);
   const solid=estN?path(pts.filter(p=>p[0]>=estN)):d,dash=estN?path(pts.filter(p=>p[0]<=estN)):'';
   const area=d+`L${x(pts[pts.length-1][0])},${y(Math.max(mn,0))}L${x(pts[0][0])},${y(Math.max(mn,0))}Z`;
-  let lab='';labels.forEach((lb,i)=>{lab+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle">${esc(lb)}</text><rect class="hl" data-h="${i}" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T-B}" style="display:none"/><rect class="hit" data-i="${i}" tabindex="0" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T}"/>`});
+  let lab='';labels.forEach((lb,i)=>{lab+=`${i%lstep===0?`<text x="${x(i)}" y="${H-8}" text-anchor="middle">${esc(lb)}</text>`:''}<rect class="hl" data-h="${i}" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T-B}" style="display:none"/><rect class="hit" data-i="${i}" tabindex="0" role="button" aria-label="${esc(lb)}" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T}"/>`});
   const last=pts[pts.length-1];
   const endLbl=`<text x="${Math.min(x(last[0]),W-R-4)}" y="${y(last[1])-10}" text-anchor="end" style="fill:var(--ink);font-weight:500">${kfmt(last[1])}</text>`;
   box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">${g}<path class="area" d="${area}"/>${dash?`<path class="line est" d="${dash}"/>`:''}<path class="line" d="${solid}"/><circle class="dot" cx="${x(last[0])}" cy="${y(last[1])}" r="4.5"/>${endLbl}${lab}</svg>`;
-  attachTip(box,box.querySelector('svg'),tipFn);
+  attachTip(box,box.querySelector('svg'),tipFn,opts.onPick);
 }
 
 /* ---------- 總覽 ---------- */
-let ovYear=null;
+let ovYear=null,ovPeriod=null,ovView='flow',ovCat='ex',ovCatAll=false,ovSel=null;const ovOpen=new Set();
+const signedN=v=>(v<0?'−':'+')+fmt(Math.abs(v));
+const ymText=ym=>`${roc(+ym.slice(0,4))}年${+ym.slice(5)}月`;
+/* 一個月裡每一筆收支（資金移動不算），給「點數字看明細」用 */
+function itemsOf(ym){const out=[];const m=S.monthly[ym];
+  const push=(rec,c,a,n,d)=>{if(MOVE_FLOWS.has(classify(rec,ovr()).flow))return;out.push({d,t:rec.t,c,a:+a||0,n:n||''})};
+  if(m){for(const[k,v]of Object.entries(m.income||{}))out.push({d:ym+'-00',t:'i',c:k,a:+v||0,n:'Excel 月總計'});for(const[k,v]of Object.entries(m.expense||{}))out.push({d:ym+'-00',t:'e',c:k,a:+v||0,n:'Excel 月總計'});
+    const x=m.extra||{};for(const[k,v]of Object.entries(x.income||{}))push({d:ym+'-00',t:'i',c:k,a:v,n:'extra'},k,v,'補記',ym+'-00');for(const[k,v]of Object.entries(x.expense||{}))push({d:ym+'-00',t:'e',c:k,a:v,n:'extra'},k,v,'補記',ym+'-00');
+    for(const r of m.rows||[])push(r,r.c||'其他',r.a,r.n,r.d)}
+  for(const e of S.entries){if(!e.date||e.date.slice(0,7)!==ym)continue;push({d:e.date,t:e.type==='income'?'i':'e',c:e.category,a:e.amount,n:e.note,flow:e.flow},e.category||'其他',e.amount,e.note,e.date)}
+  return out}
+/* 目前選的期間：要統計的月份 pm、圖表顯示的月份 cm、期間最後一個有資料的月份 endYM */
+function ovMonths(){
+  const ms=[...Array(12)].map((_,i)=>`${ovYear}-${pad(i+1)}`);
+  const lim=ovYear===today.getFullYear()?curYM:ms[11];const hasM=ms.filter(k=>k<=lim&&agg(k).has);
+  const endYM=hasM.length?hasM[hasM.length-1]:(ovYear===today.getFullYear()?curYM:ms[11]);
+  const six=[...Array(6)].map((_,i)=>ymAdd(endYM,i-5));
+  const pm=ovPeriod==='year'?ms.filter(k=>k<=endYM):ovPeriod==='six'?six:[endYM];
+  const cm=ovPeriod==='year'?ms:six;
+  return{ms,pm,cm,endYM}}
+const pLabel=()=>ovPeriod==='year'?'年':ovPeriod==='six'?'近 6 月':'本月';
 function renderOverview(){
   const ys=years();
   if(loading()&&!ys.length){$('#ov-kpis').innerHTML=kpi('年收入','…')+kpi('年支出','…')+kpi('結餘','…')+kpi('儲蓄率','…');return}
   if(!ys.length){
-    $('#ov-years').innerHTML='';$('#ov-kpis').innerHTML=kpi('年收入','$0')+kpi('年支出','$0')+kpi('結餘','$0')+kpi('儲蓄率','—');
+    $('#ov-years').innerHTML='';$('#ov-range').textContent='';$('#ov-kpis').innerHTML=kpi('年收入','$0')+kpi('年支出','$0')+kpi('結餘','$0')+kpi('儲蓄率','—');
     $('#ov-chart').innerHTML='<div class="empty">還沒有任何收支資料。到「記帳」記下第一筆，這裡就會出現圖表。</div>';
-    $('#ov-cum').innerHTML='';$('#ov-cats').innerHTML='';$('#ov-ins').innerHTML='';$('#ov-table').innerHTML='';return;
+    $('#ov-pick').innerHTML='';$('#ov-cats').innerHTML='';$('#ov-ins').innerHTML='';$('#ov-table').innerHTML='';return;
   }
+  if(!ovPeriod)ovPeriod=matchMedia('(max-width:640px)').matches?'six':'year';
   if(!ovYear||!ys.includes(ovYear))ovYear=ys.includes(today.getFullYear())&&monthsWithData().filter(k=>k.startsWith(today.getFullYear())).length>=2?today.getFullYear():ys[ys.length-1];
   $('#ov-years').innerHTML=ys.map(y=>`<button class="chip" data-y="${y}" aria-pressed="${y===ovYear}">${roc(y)}年 · ${y}</button>`).join('');
+  document.querySelectorAll('#ov-period button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.p===ovPeriod));
+  document.querySelectorAll('#ov-view button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.w===ovView));
+  document.querySelectorAll('#ov-catmode button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cm===ovCat));
   $('#ov-title').textContent=`民國 ${roc(ovYear)} 年總覽`;
-  const ms=[...Array(12)].map((_,i)=>`${ovYear}-${pad(i+1)}`);
-  const as=ms.map(agg);
-  const ti=as.reduce((a,b)=>a+b.ti,0),te=as.reduce((a,b)=>a+b.te,0),bal=ti-te;
-  const nM=as.filter(a=>a.has).length;
-  $('#ov-kpis').innerHTML=kpi('年收入',money(ti),`${nM} 個月有記錄`)+kpi('年支出',money(te),nM?`平均每月 ${money(te/nM)}`:'')+
-    kpi('結餘',money(bal),bal<0?'支出比收入多':'收入大於支出',bal<0?'neg':'pos')+kpi('儲蓄率',ti?Math.round(bal/ti*100)+'%':'—','結餘 ÷ 收入',bal<0?'neg':'');
-  const labels=ms.map(rocLabel);
-  const tip=i=>{const a=as[i];if(!a.has)return`<b>${ovYear}年${i+1}月</b><div class="muted">沒有記錄</div>`;
+  const{pm,cm,endYM}=ovMonths();const as=pm.map(agg);
+  $('#ov-range').textContent=ovPeriod==='month'?`本月 · ${ymText(endYM)}${endYM!==curYM?'（這年最後一個有記錄的月份）':''}`:`${pLabel()} · ${ymText(pm[0])} ～ ${ymText(pm[pm.length-1])}`;
+  const ti=as.reduce((a,b)=>a+b.ti,0),te=as.reduce((a,b)=>a+b.te,0),bal=ti-te;const nM=as.filter(a=>a.has).length;const pl=ovPeriod==='year'?'年':ovPeriod==='six'?'近 6 月':'本月';
+  $('#ov-kpis').innerHTML=kpi(pl+'收入',money(ti),`${nM} 個月有記錄`,'',`data-detail="i" role="button" tabindex="0" aria-label="${pl}收入明細"`)+kpi(pl+'支出',money(te),nM?`平均每月 ${money(te/nM)}`:'','',`data-detail="e" role="button" tabindex="0" aria-label="${pl}支出明細"`)+
+    kpi('結餘',(bal<0?'':'+')+money(bal),bal<0?'支出比收入多':'收入大於支出',bal<0?'neg':'pos')+kpi('儲蓄率',ti?Math.round(bal/ti*100)+'%':'—','結餘 ÷ 收入',bal<0?'neg':'');
+  // 趨勢圖：每月收支／累計結餘，同一區域切換；點月份在下面固定顯示明細
+  const cas=cm.map(agg);const labels=cm.map(k=>rocLabel(k));
+  if(!cm.includes(ovSel))ovSel=cm.includes(endYM)?endYM:cm[cm.length-1];
+  const box=$('#ov-chart');box.dataset.sel=cm.indexOf(ovSel);
+  const pick=i=>{ovSel=cm[i];renderPick()};
+  const tip=i=>{const a=cas[i];if(!a.has)return`<b>${ymText(cm[i])}</b><div class="muted">沒有記錄</div>`;
     const top=Object.entries(a.exp).filter(([k])=>k!=='房貸').sort((p,q)=>q[1]-p[1]).slice(0,3);
-    return`<b>${roc(ovYear)}年${i+1}月</b><div class="r"><span>收入</span><span>${money(a.ti)}</span></div><div class="r"><span>支出</span><span>${money(a.te)}</span></div><div class="r"><span>結餘</span><span>${money(a.ti-a.te)}</span></div>`+
+    return`<b>${ymText(cm[i])}</b><div class="r"><span>收入</span><span>${money(a.ti)}</span></div><div class="r"><span>支出</span><span>${money(a.te)}</span></div><div class="r"><span>結餘</span><span>${money(a.ti-a.te)}</span></div>`+
       (top.length?`<div style="margin-top:4px;opacity:.75">最多：${top.map(([k,v])=>`${esc(k)} ${kfmt(v)}`).join('、')}</div>`:'')};
-  barChart($('#ov-chart'),labels,as.map(a=>a.ti),as.map(a=>a.te),tip);
-  let run=0;const lastIdx=as.map(a=>a.has).lastIndexOf(true);
-  const cum=as.map((a,i)=>{run+=a.ti-a.te;return i<=lastIdx?run:null});
-  lineChart($('#ov-cum'),labels,cum,i=>cum[i]==null?'':`<b>${roc(ovYear)}年${i+1}月底</b><div class="r"><span>累計結餘</span><span>${money(cum[i])}</span></div>`,'累計結餘折線圖');
-  // categories
-  const cats={};as.forEach(a=>{for(const[k,v]of Object.entries(a.exp))if(k!=='房貸')cats[k]=(cats[k]||0)+v});
+  $('#ov-legend').hidden=ovView!=='flow';$('#ov-cumnote').hidden=ovView!=='cum';
+  if(ovView==='flow')barChart(box,labels,cas.map(a=>a.ti),cas.map(a=>a.te),tip,pick);
+  else{let run=0;const lastIdx=cas.map(a=>a.has).lastIndexOf(true);const cum=cas.map((a,i)=>{run+=a.ti-a.te;return i<=lastIdx?run:null});
+    $('#ov-cumnote').textContent=`累計結餘＝${+cm[0].slice(5)} 月起，每月收入減支出一路加總，不是銀行存款餘額。`;
+    lineChart(box,labels,cum,i=>cum[i]==null?'':`<b>${ymText(cm[i])}底</b><div class="r"><span>累計結餘</span><span>${money(cum[i])}</span></div>`,'累計結餘折線圖',0,{onPick:pick,H:240})}
+  renderPick();
+  // 逐月明細：手機四欄（月份、收入、總支出、結餘），其餘點開；桌面七欄
+  const tms=ovPeriod==='year'?pm:pm;let rows='',sI=0,sM=0,sO=0,sT=0,n=0;
+  tms.forEach(ym=>{const a=agg(ym),mon=+ym.slice(5),note=(S.monthly[ym]||{}).note||'';
+    if(!a.has){rows+=`<tr class="ym none"><td>${mon}月</td><td class="num r">—</td><td class="num r x">—</td><td class="num r x">—</td><td class="num r">—</td><td class="num r">—</td><td class="small x"></td></tr>`;return}
+    const b=a.ti-a.te,mort=a.exp['房貸']||0,liv=living(a),op=ovOpen.has(ym);n++;sI+=a.ti;sM+=mort;sO+=liv;sT+=a.te;
+    rows+=`<tr class="ym ${b<0?'negm':''} ${op?'open':''}" data-ym="${ym}" tabindex="0" aria-expanded="${op}"><td>${mon}月 <span class="chev" aria-hidden="true">›</span></td><td class="num r">${fmt(a.ti)}</td><td class="num r x">${fmt(mort)}</td><td class="num r x">${fmt(liv)}</td><td class="num r">${fmt(a.te)}</td><td class="num r bal ${b<0?'neg':'pos'}">${signedN(b)}</td><td class="small muted x note-c" title="${esc(note)}">${esc(note)}</td></tr>`+
+      `<tr class="tr-detail" ${op?'':'hidden'}><td colspan="7"><div class="dl"><span>房貸</span><b class="num">${fmt(mort)}</b><span>其他支出</span><b class="num">${fmt(liv)}</b></div>${note?`<div class="small" style="margin:6px 0">${esc(note)}</div>`:''}<button class="btn ghost sm" type="button" data-ledger="${ym}">查看當月記帳</button></td></tr>`});
+  const avg=v=>n?fmt(v/n):'—';const sb=sI-sT;
+  $('#ov-table').innerHTML=`<table><thead><tr><th>月份</th><th class="r">收入</th><th class="r x">房貸</th><th class="r x" title="房貸以外的支出">其他支出</th><th class="r">總支出</th><th class="r">結餘</th><th class="x">備註</th></tr></thead><tbody>${rows}</tbody>`+
+    (n?`<tfoot><tr><td>合計</td><td class="num r">${fmt(sI)}</td><td class="num r x">${fmt(sM)}</td><td class="num r x">${fmt(sO)}</td><td class="num r">${fmt(sT)}</td><td class="num r bal ${sb<0?'neg':'pos'}">${signedN(sb)}</td><td class="x"></td></tr>
+      <tr><td>月平均<div class="small muted">已記錄 ${n} 個月</div></td><td class="num r">${avg(sI)}</td><td class="num r x">${avg(sM)}</td><td class="num r x">${avg(sO)}</td><td class="num r">${avg(sT)}</td><td class="num r bal ${sb<0?'neg':'pos'}">${n?signedN(Math.round(sb/n)):'—'}</td><td class="x"></td></tr></tfoot>`:'')+`</table>`;
+  // 支出分布
+  const cats={};as.forEach(a=>{for(const[k,v]of Object.entries(a.exp))if(ovCat==='in'||k!=='房貸')cats[k]=(cats[k]||0)+v});
   const list=Object.entries(cats).filter(([,v])=>v>0).sort((p,q)=>GRAYCATS.has(p[0])-GRAYCATS.has(q[0])||q[1]-p[1]);
-  const cmax=Math.max(1,...list.map(x=>x[1]));const ctot=sum(cats);
-  $('#ov-cats').innerHTML=list.length?list.map(([k,v])=>`<div class="bar-row"><span>${esc(k)}</span><div class="bar-track"><div class="bar-fill ${GRAYCATS.has(k)?'gray':''}" style="width:${v/cmax*100}%"></div></div><span class="v">${fmt(v)} <span class="muted">${Math.round(v/ctot*100)}%</span></span></div>`).join(''):'<div class="empty">這一年沒有分類資料</div>';
-  // insights
-  const ins=[];const had=as.map((a,i)=>({a,i})).filter(x=>x.a.has);
+  const cmax=Math.max(1,...list.map(x=>x[1]));const ctot=sum(cats);const shown=ovCatAll?list:list.slice(0,5);
+  $('#ov-cats').innerHTML=shown.length?shown.map(([k,v])=>`<div class="bar-row"><span>${esc(k)}</span><div class="bar-track"><div class="bar-fill ${GRAYCATS.has(k)?'gray':''}" style="width:${v/cmax*100}%"></div></div><span class="v">${fmt(v)} <span class="muted">${Math.round(v/ctot*100)}%</span></span></div>`).join('')+`<p class="small muted" style="margin:2px 0 0">${ovCat==='in'?'含房貸':'不含房貸'}，${pLabel()}合計 ${money(ctot)}</p>`:'<div class="empty">這段期間沒有分類資料</div>';
+  const ca=$('#ov-catall');ca.hidden=list.length<=5;ca.textContent=ovCatAll?'只看前五大':`查看全部（${list.length} 類）`;
+  // 重點提醒：最多三則，附相關明細入口
+  const had=as.map((a,i)=>({a,ym:pm[i]})).filter(x=>x.a.has);const cand=[];
+  const link=(ym)=>` <button class="lnk" type="button" data-ledger="${ym}">看明細</button>`,dlink=k=>` <button class="lnk" type="button" data-detail="${k}">看明細</button>`;
   if(had.length){
-    const worst=had.reduce((p,q)=>q.a.ti-q.a.te<p.a.ti-p.a.te?q:p);
-    const wTop=Object.entries(worst.a.exp).filter(([k])=>k!=='房貸').sort((p,q)=>q[1]-p[1])[0];
-    ins.push(`<li>赤字最大的是 <strong>${worst.i+1}月</strong>（${money(worst.a.ti-worst.a.te)}），主要是${wTop?`<strong>${esc(wTop[0])}</strong> ${money(wTop[1])}`:'支出偏高'}。</li>`);
+    const low=had.reduce((p,q)=>q.a.ti-q.a.te<p.a.ti-p.a.te?q:p);const lb=low.a.ti-low.a.te;
+    const lTop=Object.entries(low.a.exp).filter(([k])=>k!=='房貸').sort((p,q)=>q[1]-p[1])[0];const why=lTop?`，花最多的是<strong>${esc(lTop[0])}</strong> ${money(lTop[1])}`:'';
+    cand.push(had.length===1?`<li><strong>${+low.ym.slice(5)}月</strong>結餘 ${lb<0?'赤字 ':''}${money(Math.abs(lb))}${why}。${link(low.ym)}</li>`
+      :lb<0?`<li>赤字最大的是 <strong>${+low.ym.slice(5)}月</strong>（${money(lb)}）${why}。${link(low.ym)}</li>`:`<li>結餘最低的是 <strong>${+low.ym.slice(5)}月</strong>（+${money(lb)}）${why}。每個月都有結餘。${link(low.ym)}</li>`);
     const neg=had.filter(x=>x.a.ti<x.a.te).length;
-    ins.push(`<li>${had.length} 個月裡有 <strong>${neg} 個月</strong>入不敷出。</li>`);
-    const top=list.find(([k])=>!GRAYCATS.has(k));
-    if(top)ins.push(`<li>最大的花費類別是 <strong>${esc(top[0])}</strong>，全年 ${money(top[1])}，佔生活支出 ${Math.round(top[1]/ctot*100)}%。</li>`);
-    const mort=as.reduce((a,b)=>a+(b.exp['房貸']||0),0);
-    if(mort)ins.push(`<li>房貸全年 ${money(mort)}，佔收入 ${ti?Math.round(mort/ti*100):0}%。</li>`);
-    const yearly=S.fixed.filter(f=>f.freq==='yearly').reduce((a,f)=>a+(+f.amount||0),0);
-    if(yearly)ins.push(`<li>每年一次的固定支出共 ${money(yearly)}，每月先存 <strong>${money(yearly/12)}</strong> 就不會在繳費月份變赤字。</li>`);
+    if(neg&&had.length>1)cand.push(`<li>${had.length} 個月裡有 <strong>${neg} 個月</strong>入不敷出。${dlink('e')}</li>`);
   }
   const mvY={};let nMvY=0;as.forEach(a=>{nMvY+=a.nMv;for(const[k,v]of Object.entries(a.mv))mvY[k]=(mvY[k]||0)+v});
-  if(nMvY){const net=(mvY.invest_buy||0)-(mvY.invest_sell||0);ins.push(`<li>有 ${nMvY} 筆資金移動沒有算進收支：${esc(mvText(mvY))}。${net>0?`今年投資淨投入 <strong>${money(net)}</strong>，這是存成資產，不是花掉。`:net<0?`今年賣出投資比買進多 ${money(-net)}。`:''}</li>`)}
-  $('#ov-ins').innerHTML=ins.join('')||'<li>資料再多一些就能看出趨勢。</li>';
-  // table
-  let rows='';as.forEach((a,i)=>{if(!a.has)return;const b=a.ti-a.te;rows+=`<tr><td>${i+1}月</td><td class="num r">${fmt(a.ti)}</td><td class="num r">${fmt(a.exp['房貸']||0)}</td><td class="num r">${fmt(living(a))}</td><td class="num r">${fmt(a.te)}</td><td class="num r ${b<0?'neg':'pos'}">${b<0?'−':''}${fmt(Math.abs(b))}</td><td class="small muted">${esc((S.monthly[ms[i]]||{}).note||'')}</td></tr>`});
-  $('#ov-table').innerHTML=`<table><thead><tr><th>月份</th><th class="r">收入</th><th class="r">房貸</th><th class="r">生活支出</th><th class="r">總支出</th><th class="r">結餘</th><th>備註</th></tr></thead><tbody>${rows}</tbody></table>`;
+  if(nMvY){const net=(mvY.invest_buy||0)-(mvY.invest_sell||0);cand.push(`<li>有 ${nMvY} 筆資金移動沒有算進收支：${esc(mvText(mvY))}。${net>0?`這段期間投資淨投入 <strong>${money(net)}</strong>，是存成資產，不是花掉。`:net<0?`賣出投資比買進多 ${money(-net)}。`:''}</li>`)}
+  const topc=Object.entries(cats).filter(([k,v])=>v>0&&!GRAYCATS.has(k)).sort((p,q)=>q[1]-p[1])[0];
+  if(topc)cand.push(`<li>最大的花費類別是 <strong>${esc(topc[0])}</strong>，${pLabel()} ${money(topc[1])}，佔${ovCat==='in'?'':'生活'}支出 ${Math.round(topc[1]/ctot*100)}%。${dlink('e')}</li>`);
+  const mort=as.reduce((a,b)=>a+(b.exp['房貸']||0),0);
+  if(mort)cand.push(`<li>房貸${pLabel()}共 ${money(mort)}，佔收入 ${ti?Math.round(mort/ti*100):0}%。</li>`);
+  const yearly=S.fixed.filter(f=>f.freq==='yearly').reduce((a,f)=>a+(+f.amount||0),0);
+  if(yearly)cand.push(`<li>每年一次的固定支出共 ${money(yearly)}，每月先存 <strong>${money(yearly/12)}</strong> 就不會在繳費月份變赤字。</li>`);
+  $('#ov-ins').innerHTML=cand.slice(0,3).join('')||'<li>資料再多一些就能看出趨勢。</li>';
 }
-$('#ov-years').addEventListener('click',e=>{const b=e.target.closest('[data-y]');if(b){ovYear=+b.dataset.y;renderOverview()}});
+/* 圖表下方固定顯示被選到的月份 */
+function renderPick(){const ym=ovSel;if(!ym){$('#ov-pick').innerHTML='';return}const a=agg(ym);
+  if(!a.has){$('#ov-pick').innerHTML=`<div class="pick-h">${ymText(ym)}</div><div class="small muted">這個月沒有記錄。</div>`;return}
+  const b=a.ti-a.te,top=Object.entries(a.exp).filter(([k])=>k!=='房貸').sort((p,q)=>q[1]-p[1])[0];
+  $('#ov-pick').innerHTML=`<div class="pick-h">${ymText(ym)}</div><div class="pick-g"><div><span class="small muted">收入</span><b class="num">${fmt(a.ti)}</b></div><div><span class="small muted">支出</span><b class="num">${fmt(a.te)}</b></div><div><span class="small muted">結餘</span><b class="num ${b<0?'neg':'pos'}">${signedN(b)}</b></div></div>`+
+    `<div class="row between" style="margin-top:8px"><span class="small muted">${top?`花最多：${esc(top[0])} ${money(top[1])}`:''}</span><button class="btn ghost sm" type="button" data-ledger="${ym}">查看該月明細</button></div>`}
+/* 點收入、支出數字：看這段期間的類別和最大幾筆 */
+function openDetail(kind){const{pm}=ovMonths();const all=pm.flatMap(itemsOf).filter(x=>x.t===kind);const tot=all.reduce((a,x)=>a+x.a,0);const name=kind==='i'?'收入':'支出';
+  const by={};all.forEach(x=>by[x.c]=(by[x.c]||0)+x.a);const cl=Object.entries(by).sort((p,q)=>q[1]-p[1]);const mx=Math.max(1,...cl.map(x=>x[1]));
+  const top=[...all].sort((p,q)=>q.a-p.a).slice(0,30);
+  openSheet(`${pLabel()}${name}明細`,`<div class="small muted">${ymText(pm[0])}${pm.length>1?` ～ ${ymText(pm[pm.length-1])}`:''}，共 ${all.length} 筆、${money(tot)}。資金移動（轉帳、投資買賣、借入）沒有算進來。</div>
+    <div class="bars">${cl.map(([k,v])=>`<div class="bar-row"><span>${esc(k)}</span><div class="bar-track"><div class="bar-fill ${kind==='i'?'inc':''}" style="width:${v/mx*100}%"></div></div><span class="v">${fmt(v)}</span></div>`).join('')}</div>
+    <h3>最大的 ${top.length} 筆</h3><div class="tbl-wrap"><table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th class="r">金額</th></tr></thead><tbody>${top.map(x=>`<tr><td class="num small">${esc(x.d.endsWith('-00')?x.d.slice(5,7)+'月':x.d.slice(5).replace('-','/'))}</td><td>${esc(x.c)}</td><td class="small muted">${esc(x.n)}</td><td class="num r">${fmt(x.a)}</td></tr>`).join('')}</tbody></table></div>
+    <button class="btn" type="button" data-ledger="${pm[pm.length-1]}">到記帳看 ${+pm[pm.length-1].slice(5)} 月</button>`,{full:true})}
+function goLedger(ym){$('#lg-month').value=ym;scrollAt.ledger=0;showTab('ledger');$('#lg-back').hidden=false}
+$('#lg-back').addEventListener('click',()=>showTab('overview'));
+$('#sheet-body').addEventListener('click',e=>{const b=e.target.closest('[data-ledger]');if(b)goLedger(b.dataset.ledger)});
+$('#v-overview').addEventListener('click',e=>{const t=e.target;let b;
+  if(b=t.closest('[data-y]')){ovYear=+b.dataset.y;ovSel=null;renderOverview()}
+  else if(b=t.closest('[data-p]')){ovPeriod=b.dataset.p;ovSel=null;renderOverview()}
+  else if(b=t.closest('[data-w]')){ovView=b.dataset.w;renderOverview()}
+  else if(b=t.closest('[data-cm]')){ovCat=b.dataset.cm;renderOverview()}
+  else if(t.closest('#ov-catall')){ovCatAll=!ovCatAll;renderOverview()}
+  else if(b=t.closest('[data-ledger]'))goLedger(b.dataset.ledger);
+  else if(b=t.closest('[data-detail]'))openDetail(b.dataset.detail);
+  else if(b=t.closest('tr.ym[data-ym]')){const ym=b.dataset.ym;ovOpen.has(ym)?ovOpen.delete(ym):ovOpen.add(ym);b.classList.toggle('open',ovOpen.has(ym));b.setAttribute('aria-expanded',ovOpen.has(ym));b.nextElementSibling.hidden=!ovOpen.has(ym)}
+  else if(b=t.closest('.note-c'))b.classList.toggle('open')});
+$('#v-overview').addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const b=e.target.closest('.kpi[data-detail],tr.ym[data-ym]');if(b){e.preventDefault();b.click()}});
+let lastW=innerWidth,rsT=null;window.addEventListener('resize',()=>{if(innerWidth===lastW)return;lastW=innerWidth;clearTimeout(rsT);rsT=setTimeout(()=>{if(S.ready)renderAll()},200)});
 
 /* ---------- 記帳 ---------- */
 let eType='expense';
@@ -695,7 +769,7 @@ $('#hc-conf-clear').addEventListener('click',()=>{Sync.clearConflicts();renderHe
 
 const TABS=['overview','ledger','budget','plan','funds','invest','fixed','settings'];let tab=TABS.includes(location.hash.slice(1))?location.hash.slice(1):'overview';
 const MORE_TABS=[['budget','預算'],['plan','規劃與目標'],['fixed','固定支出'],['settings','設定']];const scrollAt={};
-function showTab(t){closeSheet(true);if(t!==tab)scrollAt[tab]=window.scrollY;tab=t; // 切回來時回到原本的捲動位置
+function showTab(t){closeSheet(true);if(t!=='ledger')$('#lg-back').hidden=true;if(t!==tab)scrollAt[tab]=window.scrollY;tab=t; // 切回來時回到原本的捲動位置
   document.querySelectorAll('#tabs button,#bnav [data-tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));
   $('#bnav [data-more]').setAttribute('aria-selected',MORE_TABS.some(x=>x[0]===t));
   document.querySelectorAll('[data-view]').forEach(v=>v.hidden=v.dataset.view!==t);try{history.replaceState(null,'','#'+t)}catch(e){}renderAll();window.scrollTo(0,scrollAt[t]||0)}
