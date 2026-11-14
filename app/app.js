@@ -19,7 +19,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.8.1';
+const VERSION='2.8.2';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -295,7 +295,7 @@ function renderDetailList(){const{pm,all}=dtItems();const q=dt.q.trim().toLowerC
   $('#dt-sum').innerHTML=filtered?`<div class="dt-main"><b>${esc(conds.join('｜'))}</b>｜${r.length} 筆｜${money(tot)}</div><div class="small muted">${period}，全部共 ${all.length} 筆、${money(allTot)}。資金移動（轉帳、投資買賣、借入）沒有算進來。</div>`
     :`<div class="dt-main">共 ${all.length} 筆｜${money(allTot)}</div><div class="small muted">${period}。資金移動（轉帳、投資買賣、借入）沒有算進來。</div>`;
   $('#dt-fsum').textContent=`篩選與排序：${[dt.cat||'全部類別',dt.ym?ymText(dt.ym):pm.length>1?'全部月份':'',q?`「${dt.q.trim()}」`:'',dt.sort==='date'?'日期新到舊':'金額大到小'].filter(Boolean).join('・')}`;
-  $('#dt-list').innerHTML=r.length?`<table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th class="r">金額</th><th></th></tr></thead><tbody>${shown.map(x=>`<tr><td class="num small">${esc(x.d.endsWith('-00')?x.d.slice(5,7)+'月':x.d.slice(5).replace('-','/'))}</td><td>${x.id?`<select class="cell" data-recat="${esc(x.id)}" aria-label="修改類別">${dtCatOpts(dt.kind,x.c)}</select>`:esc(x.c)}</td><td class="small muted">${esc(x.n)}</td><td class="num r">${fmt(x.a)}</td><td class="r"><button class="lnk" type="button" data-ledger="${x.ym}" aria-label="到記帳看 ${+x.ym.slice(5)} 月">記帳 ›</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty">沒有符合的交易</div>';
+  $('#dt-list').innerHTML=r.length?`<table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th class="r">金額</th><th></th></tr></thead><tbody>${shown.map(x=>`<tr><td class="num small">${esc(x.d.endsWith('-00')?x.d.slice(5,7)+'月':x.d.slice(5).replace('-','/'))}</td><td>${x.id?`<select class="cell" data-recat="${esc(x.id)}" aria-label="修改類別">${dtCatOpts(dt.kind,x.c)}</select>`:esc(x.c)}</td><td class="small muted">${esc(x.n)}</td><td class="num r">${fmt(x.a)}</td><td class="r"><button class="lnk" type="button" data-ledger="${x.ym}" data-fid="${esc(x.id||'')}" data-fsig="${esc([x.d,x.c,x.a,x.n||''].join('|'))}" aria-label="在記帳頁查看這一筆">查看 ›</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty">沒有符合的交易</div>';
   $('#dt-more').textContent=r.length?`符合 ${r.length} 筆、${money(tot)}${r.length>CAP?`，只列出前 ${CAP} 筆，請用搜尋或篩選縮小範圍`:''}。自己記的帳可直接改類別；匯入的帳到記帳頁調整性質。`:'';
   const ms=[...new Set(r.map(x=>x.ym))];
   $('#dt-go').innerHTML=ms.length===1?`<button class="btn ghost sm" type="button" data-ledger="${ms[0]}">到記帳看 ${+ms[0].slice(5)} 月</button>`:'';}
@@ -307,8 +307,13 @@ $('#sheet-body').addEventListener('change',e=>{const t=e.target;
   if(t.id==='dt-c'){dt.cat=t.value;renderDetailList()}else if(t.id==='dt-m'){dt.ym=t.value;renderDetailList()}else if(t.id==='dt-s'){dt.sort=t.value;renderDetailList()}
   else if(t.dataset.recat){const r=curRec('entries',t.dataset.recat);if(!r)return;put('entries',t.dataset.recat,{...r,category:t.value});toast(`已改成「${t.value}」`);if($('#dt-list'))renderDetail()}});
 function goLedger(ym){$('#lg-month').value=ym;scrollAt.ledger=0;showTab('ledger');$('#lg-back').hidden=false}
+/* 從明細跳到記帳後，捲到那一筆並短暫標亮；找不到就停在該月 */
+function focusLedgerRow(id,sig){const rows=[...document.querySelectorAll('#lg-list tr[data-sig]')];
+  const r=(id&&rows.find(x=>x.dataset.rid===id))||rows.find(x=>x.dataset.sig===sig);if(!r)return;
+  r.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});
+  r.classList.remove('hl');void r.offsetWidth;r.classList.add('hl');setTimeout(()=>r.classList.remove('hl'),2600)}
 $('#lg-back').addEventListener('click',()=>{const r=dtResume;dtResume=false;showTab('overview');if(r)openDetail(dt.kind,null,true)});
-$('#sheet-body').addEventListener('click',e=>{const b=e.target.closest('[data-ledger]');if(b){const r=!!$('#dt-list');goLedger(b.dataset.ledger);dtResume=r}});
+$('#sheet-body').addEventListener('click',e=>{const b=e.target.closest('[data-ledger]');if(b){const r=!!$('#dt-list');goLedger(b.dataset.ledger);dtResume=r;if(b.dataset.fsig)focusLedgerRow(b.dataset.fid,b.dataset.fsig)}});
 $('#v-overview').addEventListener('click',e=>{const t=e.target;let b;
   if(b=t.closest('[data-y]')){ovYear=+b.dataset.y;ovSel=null;renderOverview()}
   else if(b=t.closest('[data-p]')){ovPeriod=b.dataset.p;ovSel=null;renderOverview()}
@@ -369,7 +374,7 @@ function renderLedger(){
   const extraNote=hist&&hist.note?`<p class="small muted" style="margin:0">備註：${esc(hist.note)}</p>`:'';
   if(!list.length){$('#lg-list').innerHTML=`<div class="empty">${legacy?'這個月的資料是從 Excel 匯入的月總計，沒有逐筆記錄。':'這個月還沒有記錄，從上面記下第一筆。'}</div>`+extraNote;return}
   const acctName=id=>{const x=S.accounts.find(q=>q.id===id);return x?x.name||'帳戶':''};
-  guarded($('#lg-list'),extraNote+`<table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th>性質</th><th class="r">金額</th><th></th></tr></thead><tbody>${list.map(e=>`<tr class="${MOVE_FLOWS.has(e.cls.flow)?'muted':''}"><td class="num">${e.extra?'補記':esc(e.date.slice(5).replace('-','/'))}</td><td><span class="pill ${e.type==='income'?'inc':'exp'}">${esc(e.category)}</span>${e.sub&&e.sub!==e.category?` <span class="small muted">${esc(e.sub)}</span>`:''}</td><td>${esc(e.note)}${e.acct?`<div class="small muted">${esc(acctName(e.acct))}${e.acct2?' → '+esc(acctName(e.acct2)):''}${e.linked?'・已調整餘額':''}</div>`:''}</td><td>${flowSelect(e)}</td><td class="num r ${e.type==='income'?'pos':''}">${e.type==='income'?'+':'−'}${fmt(e.amount)}</td><td class="r">${e.own?`<button class="btn sm del" data-del="${esc(e.id)}" type="button">刪除</button>`:`<span class="small muted">${e.extra?'Excel':'smoney'}</span>`}</td></tr>`).join('')}</tbody></table>`);
+  guarded($('#lg-list'),extraNote+`<table><thead><tr><th>日期</th><th>類別</th><th>備註</th><th>性質</th><th class="r">金額</th><th></th></tr></thead><tbody>${list.map(e=>`<tr class="${MOVE_FLOWS.has(e.cls.flow)?'muted':''}" data-rid="${esc(e.own?e.id:'')}" data-sig="${esc([e.date,e.category,e.amount,e.note||''].join('|'))}"><td class="num">${e.extra?'補記':esc(e.date.slice(5).replace('-','/'))}</td><td><span class="pill ${e.type==='income'?'inc':'exp'}">${esc(e.category)}</span>${e.sub&&e.sub!==e.category?` <span class="small muted">${esc(e.sub)}</span>`:''}</td><td>${esc(e.note)}${e.acct?`<div class="small muted">${esc(acctName(e.acct))}${e.acct2?' → '+esc(acctName(e.acct2)):''}${e.linked?'・已調整餘額':''}</div>`:''}</td><td>${flowSelect(e)}</td><td class="num r ${e.type==='income'?'pos':''}">${e.type==='income'?'+':'−'}${fmt(e.amount)}</td><td class="r">${e.own?`<button class="btn sm del" data-del="${esc(e.id)}" type="button">刪除</button>`:`<span class="small muted">${e.extra?'Excel':'smoney'}</span>`}</td></tr>`).join('')}</tbody></table>`);
 }
 $('#lg-list').addEventListener('change',e=>{const sel=e.target.closest('[data-flow]');if(!sel)return;const row=lgRows[sel.dataset.flow];if(!row)return;const f=sel.value;
   if(row.own){const{own,cls,id,...rest}=row;put('entries',id,{...rest,flow:f});}
