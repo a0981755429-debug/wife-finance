@@ -44,3 +44,32 @@ test('snapshots 是可以同步的資料', () => {
   applyOp(d, { col: 'snapshots', id: '2026-11', data: { ym: '2026-11', net: 1 } });
   assert.deepStrictEqual(d.snapshots, [{ ym: '2026-11', net: 1, id: '2026-11' }]);
 });
+
+const { cashFlowOf, cashFlowStats, monthlyBook } = require('../app/growth.js');
+
+test('自由現金流＝收入 − 生活支出 − 貸款月付', () => {
+  const f = cashFlowOf({ ti: 60000, te: 52000, loan: 18000 });
+  assert.deepStrictEqual(f, { income: 60000, living: 34000, loan: 18000, pre: 26000, fcf: 8000, dsr: 0.3 });
+  assert.strictEqual(cashFlowOf({ ti: 0, te: 5000, loan: 0 }).dsr, null);
+});
+
+test('自由現金流統計：中位數、負的月份、貸款佔收入', () => {
+  const rows = [
+    { ym: '2026-08', ...cashFlowOf({ ti: 60000, te: 50000, loan: 18000 }) },
+    { ym: '2026-09', ...cashFlowOf({ ti: 60000, te: 65000, loan: 18000 }) },
+    { ym: '2026-10', ...cashFlowOf({ ti: 90000, te: 54000, loan: 18000 }) },
+  ];
+  const C = cashFlowStats(rows);
+  assert.strictEqual(C.n, 3); assert.strictEqual(C.median, 10000); assert.strictEqual(C.negN, 1);
+  assert.strictEqual(C.total, 41000); assert.strictEqual(C.dsr, 0.3); assert.strictEqual(C.last.ym, '2026-10');
+  assert.strictEqual(cashFlowStats([]), null);
+});
+
+test('淨資產與現金流對照：比上月和其他變動，估算的月份不算其他變動', () => {
+  const flows = { '2026-08': cashFlowOf({ ti: 60000, te: 50000, loan: 18000 }), '2026-09': cashFlowOf({ ti: 60000, te: 50000, loan: 18000 }), '2026-10': cashFlowOf({ ti: 60000, te: 50000, loan: 18000 }) };
+  const series = [{ ym: '2026-08', net: 90000, est: true }, { ym: '2026-09', net: 100000, est: false }, { ym: '2026-10', net: 125000, est: false }];
+  const b = monthlyBook(['2026-08', '2026-09', '2026-10'], flows, series);
+  assert.deepStrictEqual(b.map(r => [r.ym, r.net, r.change, r.other]), [
+    ['2026-08', 90000, null, null], ['2026-09', 100000, 10000, null], ['2026-10', 125000, 25000, 15000]]);
+  assert.strictEqual(monthlyBook(['2026-10'], flows, [])[0].net, null);
+});

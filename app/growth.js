@@ -62,4 +62,34 @@ function investPlan({ liquid = 0, reserved = 0, floor = 0, living = 0, surplus =
   return { fund, target, months, short, surplus: Math.round(surplus), toFund, toInvest, fillMonths, lump, targetFromFloor: floor > 0 };
 }
 
-if (typeof module !== 'undefined') module.exports = { EMERGENCY_MONTHS, snapshotOf, snapChanged, netSeries, growthStats, investPlan };
+/* 自由現金流：收入 − 生活支出 − 貸款月付（轉帳、投資買賣、借入這些資金移動已經排除）。
+   a = {ti, te, loan}：te 是總支出，已經含貸款月付。 */
+function cashFlowOf(a) {
+  const income = Math.round(+a.ti || 0), loan = Math.round(+a.loan || 0), living = Math.round(+a.te || 0) - loan;
+  return { income, living, loan, pre: income - living, fcf: income - living - loan, dsr: income > 0 ? loan / income : null };
+}
+
+/* 幾個完整月份的自由現金流統計 rows = [{ym, ...cashFlowOf}] */
+function cashFlowStats(rows) {
+  if (!rows.length) return null;
+  const med = arr => { const s = [...arr].sort((a, b) => a - b), h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
+  const fcf = rows.map(r => r.fcf), dsr = rows.map(r => r.dsr).filter(v => v != null);
+  return {
+    n: rows.length, median: Math.round(med(fcf)), avg: Math.round(fcf.reduce((a, b) => a + b, 0) / rows.length),
+    total: fcf.reduce((a, b) => a + b, 0), negN: fcf.filter(v => v < 0).length,
+    dsr: dsr.length ? med(dsr) : null, loan: Math.round(med(rows.map(r => r.loan))), last: rows[rows.length - 1],
+  };
+}
+
+/* 每月淨資產與現金流對照表：series 是 netSeries 的結果，flows = {年月: cashFlowOf}。
+   change = 跟上個月比的淨資產變化；other = change − 自由現金流，大約是還掉的本金、股價漲跌和沒記到的帳（估算的月份不算）。 */
+function monthlyBook(months, flows, series) {
+  const net = new Map(series.filter(p => p.net != null).map(p => [p.ym, p]));
+  return months.map(ym => {
+    const f = flows[ym] || null, p = net.get(ym) || null, q = net.get(ymShift(ym, -1)) || null;
+    const change = p && q ? p.net - q.net : null;
+    return { ym, flow: f, net: p ? p.net : null, est: p ? !!p.est : false, change, other: change != null && f && !p.est && !q.est ? change - f.fcf : null };
+  });
+}
+
+if (typeof module !== 'undefined') module.exports = { EMERGENCY_MONTHS, snapshotOf, snapChanged, netSeries, growthStats, investPlan, cashFlowOf, cashFlowStats, monthlyBook, ymShift };

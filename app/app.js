@@ -19,7 +19,7 @@ const curYM=`${today.getFullYear()}-${pad(today.getMonth()+1)}`;
 const ymAdd=(ym,k)=>{let[y,m]=ym.split('-').map(Number);m+=k;y+=Math.floor((m-1)/12);m=((m-1)%12+12)%12+1;return`${y}-${pad(m)}`};
 const roc=y=>y-1911;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const VERSION='2.8.2';
+const VERSION='2.9.0';
 const rocLabel=ym=>`${+ym.slice(5)}月`;
 
 function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,2200)}
@@ -29,15 +29,15 @@ let aggCache={};
 const ovr=()=>(S.flows&&S.flows.overrides)||{};
 function agg(ym){
   if(aggCache[ym])return aggCache[ym];
-  const inc={},exp={},mv={};let nMv=0,rp=0;const add=(o,k,v)=>{o[k]=(o[k]||0)+(+v||0)};
+  const inc={},exp={},mv={};let nMv=0,rp=0,rpX=0;const add=(o,k,v)=>{o[k]=(o[k]||0)+(+v||0)};
   // 資金移動（轉帳、投資買賣、借入）不算收入也不算支出，另外記在 mv
-  const take=(rec,cat,amt)=>{const f=classify(rec,ovr()).flow;if(MOVE_FLOWS.has(f)){add(mv,f,amt);nMv++;return}if(f==='repay')rp+=+amt||0;add(rec.t==='i'?inc:exp,cat,amt)};
+  const take=(rec,cat,amt)=>{const f=classify(rec,ovr()).flow;if(MOVE_FLOWS.has(f)){add(mv,f,amt);nMv++;return}if(f==='repay'){rp+=+amt||0;if(cat!=='房貸')rpX+=+amt||0}add(rec.t==='i'?inc:exp,cat,amt)};
   const m=S.monthly[ym];
   if(m){for(const[k,v]of Object.entries(m.income||{}))add(inc,k,v);for(const[k,v]of Object.entries(m.expense||{}))add(exp,k,v);
         const x=m.extra||{};for(const[k,v]of Object.entries(x.income||{}))take({d:ym+'-00',t:'i',c:k,a:v,n:'extra'},k,v);for(const[k,v]of Object.entries(x.expense||{}))take({d:ym+'-00',t:'e',c:k,a:v,n:'extra'},k,v);
         for(const r of m.rows||[])take(r,r.c||'其他',r.a);}
   for(const e of S.entries){if(!e.date||e.date.slice(0,7)!==ym)continue;take({d:e.date,t:e.type==='income'?'i':'e',c:e.category,a:e.amount,n:e.note,flow:e.flow},e.category||'其他',e.amount)}
-  return aggCache[ym]={inc,exp,mv,nMv,rp,ti:sum(inc),te:sum(exp),has:!!m||S.entries.some(e=>e.date&&e.date.slice(0,7)===ym)};
+  return aggCache[ym]={inc,exp,mv,nMv,rp,loan:(exp['房貸']||0)+rpX,ti:sum(inc),te:sum(exp),has:!!m||S.entries.some(e=>e.date&&e.date.slice(0,7)===ym)};
 }
 function years(){const ys=new Set();Object.keys(S.monthly).forEach(k=>ys.add(+k.slice(0,4)));S.entries.forEach(e=>e.date&&ys.add(+e.date.slice(0,4)));return[...ys].sort()}
 function monthsWithData(){const s=new Set(Object.keys(S.monthly));S.entries.forEach(e=>e.date&&s.add(e.date.slice(0,7)));return[...s].sort()}
@@ -158,6 +158,21 @@ function lineChart(box,labels,vals,tipFn,aria,estN=0,opts={}){ // estN：前幾�
   const last=pts[pts.length-1];
   const endLbl=`<text x="${Math.min(x(last[0]),W-R-4)}" y="${y(last[1])-10}" text-anchor="end" style="fill:var(--ink);font-weight:500">${kfmt(last[1])}</text>`;
   box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">${g}<path class="area" d="${area}"/>${dash?`<path class="line est" d="${dash}"/>`:''}<path class="line" d="${solid}"/><circle class="dot" cx="${x(last[0])}" cy="${y(last[1])}" r="4.5"/>${endLbl}${lab}</svg>`;
+  attachTip(box,box.querySelector('svg'),tipFn,opts.onPick);
+}
+
+function signedBarChart(box,labels,vals,tipFn,aria,opts={}){ // 正負長條：正的用綠、負的用紅，從 0 往上或往下長
+  const W=Math.max(280,box.clientWidth||720),H=opts.H||190,L=46,R=8,T=12,B=26;const n=labels.length;
+  const nums=vals.filter(v=>v!=null);if(!nums.length){box.innerHTML='<div class="empty">還沒有資料</div>';return}
+  let mn=Math.min(0,...nums),mx=Math.max(0,...nums);const span=niceMax(Math.max(mx-mn,1));const step=span/4;mn=Math.floor(mn/step)*step;mx=Math.ceil(mx/step)*step;if(mx===mn)mx=mn+step;
+  const y=v=>T+(H-T-B)*(1-(v-mn)/(mx-mn));const slot=(W-L-R)/n;const bw=Math.max(6,Math.min(26,slot-10));const lstep=slot<30?2:1;
+  let g='';for(let v=mn;v<=mx+1e-6;v+=step)g+=`<line class="${Math.abs(v)<1e-6?'zero':'grid'}" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${kfmt(v)}</text>`;
+  let bars='';labels.forEach((lb,i)=>{const cx=L+slot*i+slot/2,v=vals[i];
+    bars+=`<rect class="hl" data-h="${i}" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T-B}" style="display:none"/>`;
+    if(v){const a=y(Math.max(v,0)),b=y(Math.min(v,0));bars+=`<rect class="${v<0?'b-neg':'b-pos'}${opts.liveI===i?' live':''}" x="${cx-bw/2}" y="${a}" width="${bw}" height="${Math.max(1,b-a)}" rx="3"/>`}
+    if(i%lstep===0)bars+=`<text x="${cx}" y="${H-8}" text-anchor="middle">${esc(lb)}</text>`;
+    bars+=`<rect class="hit" data-i="${i}" tabindex="0" role="button" aria-label="${esc(lb)}" x="${L+slot*i}" y="${T}" width="${slot}" height="${H-T}"/>`});
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">${g}${bars}</svg>`;
   attachTip(box,box.querySelector('svg'),tipFn,opts.onPick);
 }
 
@@ -689,14 +704,14 @@ let snapT=null;
 function scheduleSnapshot(){if(!S.ready||!Q.tried||!Sync.hasToken())return;clearTimeout(snapT);snapT=setTimeout(takeSnapshot,4000)}
 function takeSnapshot(){if(!hasAssets())return;const snap=snapshotOf(fundsNow(),curYM);const old=S.snapshots.find(x=>x.id===curYM);
   if(snapChanged(old,snap))put('snapshots',curYM,{...snap,at:new Date().toISOString()})}
-function surplusMap(){const o={};for(const ym of monthsWithData()){const a=agg(ym);o[ym]=a.ti-a.te+a.rp}return o} // 還款大多是本金，負債跟著變少，淨資產不太變，所以往回推時不扣
+function surplusMap(){const o={};for(const ym of monthsWithData()){const a=agg(ym);o[ym]=a.ti-a.te+a.loan}return o} // 還款大多是本金，負債跟著變少，淨資產不太變，所以往回推時不扣
 const ymShort=ym=>(+ym.slice(5)===1?`${roc(+ym.slice(0,4))}/`:'')+(+ym.slice(5))+'月';
 const ymLong=ym=>`${roc(+ym.slice(0,4))}年${+ym.slice(5)}月`;
 function renderGrowth(F,st){
-  if(!hasAssets()){$('#gr-kpis').innerHTML='';$('#gr-chart').innerHTML='<div class="empty">登錄帳戶或持股後，每個月會自動記下淨資產，畫成成長曲線。</div>';$('#gr-note').textContent='';
+  if(!hasAssets()){renderCashFlow([]);$('#gr-kpis').innerHTML='';$('#gr-chart').innerHTML='<div class="empty">登錄帳戶或持股後，每個月會自動記下淨資產，畫成成長曲線。</div>';$('#gr-note').textContent='';
     $('#gr-plan').innerHTML='<div class="empty">先在下面登錄帳戶餘額，就會算出緊急預備金夠幾個月、每月可以投入多少。</div>';return}
   const live=snapshotOf(F,curYM);const snaps=S.snapshots.filter(x=>x.id!==curYM).concat([{...live,id:curYM}]);
-  const series=netSeries(snaps,surplusMap(),curYM,12);const G=growthStats(series);const estN=series.filter(p=>p.est).length;
+  const series=netSeries(snaps,surplusMap(),curYM,12);const G=growthStats(series);const estN=series.filter(p=>p.est).length;renderCashFlow(series);
   const diff=(d,lab)=>d?kpi(lab,(d.diff>=0?'+':'−')+money(Math.abs(d.diff)),`跟 ${ymLong(d.ym)}${d.est?'（估算）':''}比`,d.diff<0?'neg':'pos'):kpi(lab,'—','資料還不夠');
   const{spend,P}=planNow(F,st);
   $('#gr-kpis').innerHTML=kpi('本月淨資產',money(G.now.net),'即時，含持股市值',G.now.net<0?'neg':'')+diff(G.prev,'比上個月')+diff(G.year||G.first,G.year?'比一年前':'比最早一筆')
@@ -715,6 +730,41 @@ function renderGrowth(F,st){
   $('#gr-plan').innerHTML=`<div class="wf">${row('活存＋現金 − 用途預留',fmt(P.fund))+row('目標',fmt(P.target),'',P.targetFromFloor?'安全現金底線':`${EMERGENCY_MONTHS} 個月支出`)
     +row(P.short>0?'還差':'已足夠',fmt(P.short>0?P.short:P.fund-P.target),'wf-total '+(P.short>0?'neg':''))}</div><ul class="insights" style="margin-top:10px">${tips.map(t=>`<li>${t}</li>`).join('')}</ul>`;
 }
+
+/* ---------- 自由現金流 ---------- */
+// 每月自由現金流 = 收入 − 生活支出 − 貸款月付；跟每月淨資產放在同一張表對照
+const cfOpen=new Set();
+function renderCashFlow(series){
+  const ms=monthsWithData().filter(k=>k<=curYM).slice(-12);
+  if(!ms.length){$('#cf-kpis').innerHTML='';$('#cf-chart').innerHTML='<div class="empty">記帳後就會算出每個月的自由現金流。</div>';$('#cf-note').textContent='';$('#cf-table').innerHTML='';return}
+  const flows={};ms.forEach(ym=>flows[ym]=cashFlowOf(agg(ym)));
+  const done=ms.filter(k=>k<curYM),C=cashFlowStats(done.map(ym=>({ym,...flows[ym]})));const live=ms.includes(curYM)?flows[curYM]:null;
+  const pct=v=>v==null?'—':Math.round(v*100)+'%';const sg=v=>(v<0?'−':'')+money(Math.abs(v));
+  const fixedLoan=S.fixed.filter(f=>f.kind==='貸款'&&f.freq==='monthly').reduce((a,f)=>a+(+f.amount||0),0);
+  $('#cf-kpis').innerHTML=(C?kpi('上個月自由現金流',sg(C.last.fcf),`${ymLong(C.last.ym)}：收入 ${fmt(C.last.income)} − 生活 ${fmt(C.last.living)} − 貸款 ${fmt(C.last.loan)}`,C.last.fcf<0?'neg':'pos')
+      +kpi(`近 ${C.n} 個月中位數`,sg(C.median),C.negN?`其中 ${C.negN} 個月是負的`:'每個月都是正的',C.median<0?'neg':'pos')
+      +kpi('貸款佔收入',pct(C.dsr),C.dsr==null?'還沒有收入資料':C.dsr>0.4?'超過 4 成，偏高':C.dsr>0.3?'3～4 成，留意':'在 3 成以內',C.dsr>0.4?'neg':''):kpi('自由現金流','—','還沒有完整月份的資料'))
+    +(live?kpi('本月累計',sg(live.fcf),`收入 ${fmt(live.income)}，還沒到月底`,live.fcf<0?'neg':''):'');
+  const labels=ms.map(ymShort),vals=ms.map(ym=>flows[ym].fcf);
+  signedBarChart($('#cf-chart'),labels,vals,i=>{const ym=ms[i],f=flows[ym];return`<b>${ymLong(ym)}${ym===curYM?'（累計中）':''}</b><div class="r"><span>收入</span><span>${fmt(f.income)}</span></div><div class="r"><span>生活支出</span><span>−${fmt(f.living)}</span></div><div class="r"><span>貸款月付</span><span>−${fmt(f.loan)}</span></div><div class="r"><span>自由現金流</span><span>${signedN(f.fcf)}</span></div>`},'每月自由現金流長條圖',{liveI:ms.indexOf(curYM)});
+  const notes=['自由現金流是每個月真正留得下來的錢，可以拿去存預備金、投資或提前還款。轉帳、買賣股票和借款不算在內。'];
+  if(C&&fixedLoan&&C.last.loan<fixedLoan*0.5)notes.push(`${ymLong(C.last.ym)}${C.last.loan?`記到的貸款月付只有 ${money(C.last.loan)}`:'沒有記到貸款月付'}，固定支出登錄的是每月 ${money(fixedLoan)}，可能有一筆還沒記。`);
+  $('#cf-note').textContent=notes.join('');
+  // 對照表：新的月份在上面
+  const book=monthlyBook(ms,flows,series).reverse();const anyNet=book.some(r=>r.net!=null);
+  const cell=(v,cls='')=>`<td class="num r ${cls}">${v}</td>`;
+  const rows=book.map(r=>{const f=r.flow,op=cfOpen.has(r.ym);
+    const chg=r.change==null?'—':signedN(r.change);
+    return`<tr class="ym ${f.fcf<0?'negm':''} ${op?'open':''}" data-cfym="${r.ym}" tabindex="0" aria-expanded="${op}"><td>${ymShort(r.ym)}${r.ym===curYM?' <span class="tag">累計中</span>':''} <span class="chev ex" aria-hidden="true">⌄</span></td>`
+      +cell(fmt(f.income),'x')+cell(fmt(f.living),'x')+cell(fmt(f.loan),'x')+cell(signedN(f.fcf),'bal '+(f.fcf<0?'neg':'pos'))
+      +(anyNet?cell(r.net==null?'—':fmt(r.net)+(r.est?'<span class="small muted">估</span>':''))+cell(chg,'x '+(r.change==null?'':r.change<0?'neg':'pos')):'')+`</tr>`
+      +`<tr class="tr-detail" ${op?'':'hidden'}><td colspan="${anyNet?7:5}"><div class="dl"><span>收入</span><b class="num">${fmt(f.income)}</b><span>生活支出</span><b class="num">${fmt(f.living)}</b><span>貸款月付</span><b class="num">${fmt(f.loan)}</b>${r.change!=null?`<span>淨資產變化</span><b class="num">${signedN(r.change)}</b>`:''}${r.other!=null?`<span>其他變動</span><b class="num">${signedN(r.other)}</b>`:''}</div>${r.other!=null?'<div class="small muted" style="margin-top:6px">其他變動＝淨資產變化 − 自由現金流，大多是還掉的本金、股價漲跌或沒記到的帳。</div>':''}</td></tr>`}).join('');
+  $('#cf-table').innerHTML=`<table><thead><tr><th>月份</th><th class="r x">收入</th><th class="r x">生活支出</th><th class="r x">貸款月付</th><th class="r">自由現金流</th>${anyNet?'<th class="r">月底淨資產</th><th class="r x">比上月</th>':''}</tr></thead><tbody>${rows}</tbody></table>`
+    +(anyNet?'':'<p class="small muted" style="margin:6px 0 0">登錄帳戶或持股後，這裡會多出每月淨資產。</p>');
+}
+$('#cf-table').addEventListener('click',e=>{const tr=e.target.closest('tr[data-cfym]');if(!tr||matchMedia('(min-width:641px)').matches)return;const ym=tr.dataset.cfym;
+  if(cfOpen.has(ym))cfOpen.delete(ym);else cfOpen.add(ym);const op=cfOpen.has(ym);tr.classList.toggle('open',op);tr.setAttribute('aria-expanded',op);tr.nextElementSibling.hidden=!op});
+$('#cf-table').addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('tr[data-cfym]')){e.preventDefault();e.target.click()}});
 
 /* ---------- 固定支出 ---------- */
 function renderFixed(){

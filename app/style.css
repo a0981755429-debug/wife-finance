@@ -68,6 +68,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .chart .grid{stroke:var(--rule);stroke-width:1}
 .chart .zero{stroke:var(--ink-3);stroke-width:1}
 .chart .b-inc{fill:var(--inc)} .chart .b-exp{fill:var(--exp)}
+.chart .b-pos{fill:var(--good)} .chart .b-neg{fill:var(--bad)} .chart .live{opacity:.5}
 .chart .line{fill:none;stroke:var(--accent);stroke-width:2}
 .chart .line.est{stroke-dasharray:5 4;opacity:.7}
 .chart .area{fill:var(--accent);opacity:.08}
@@ -312,3 +313,7 @@ body{padding-top:16px}.wrap{gap:16px}header.top{padding:0;gap:8px}h1{font-size:2
 .sheet-head{top:-20px}.pick-g b{font-size:19px}.dt-main{font-size:20px}
 }
 
+
+/* 自由現金流對照表：桌面不能點，手機點月份展開細項 */
+@media (min-width:641px){.cf-tbl tr.ym{cursor:default}.cf-tbl .chev{display:none}}
+.cf-tbl .tr-detail td{white-space:normal;position:static}
